@@ -12,9 +12,6 @@ import {
   safeHttpUrl,
 } from "../../../lib/applications/selectors";
 
-// ===== Today-like card (공용) =====
-// ===== Today-like card (공용) =====
-// ===== Today-like card (공용) =====
 export function AppCard({
   a,
   contextLabel,
@@ -32,7 +29,7 @@ export function AppCard({
   variant = "default",
 }: {
   a: Application;
-  contextLabel?: string; // ex) "우선순위" / "마감" / "팔로업"
+  contextLabel?: string;
   showEventBadge?: boolean;
   eventType?: CalendarEventType;
   pinned: boolean;
@@ -49,50 +46,32 @@ export function AppCard({
   const deadlineBadge = a.deadline_at ? ddayBadge(calcDDay(a.deadline_at)) : null;
   const followupBadge = a.followup_at ? ddayBadge(calcDDay(a.followup_at)) : null;
 
-  const topBadge =
-    eventType === "DEADLINE" ? deadlineBadge : eventType === "FOLLOWUP" ? followupBadge : null;
-
+  const topBadge = eventType === "DEADLINE" ? deadlineBadge : eventType === "FOLLOWUP" ? followupBadge : null;
   const compact = variant === "compact";
 
   const outerCls = [
-  "rounded-xl border border-zinc-800/70 bg-zinc-950/55 hover:bg-zinc-950/70 transition cursor-pointer shadow-[0_0_0_1px_rgba(255,255,255,0.02)]",
-  compact ? "p-3" : "p-4",
-].join(" ");
+    "rounded-xl border border-zinc-800/70 bg-zinc-950/55 hover:bg-zinc-950/70 transition cursor-pointer shadow-[0_0_0_1px_rgba(255,255,255,0.02)]",
+    compact ? "p-3" : "p-4",
+  ].join(" ");
 
   const badgeBase = "text-xs px-2 py-1 rounded-full whitespace-nowrap";
+
+  // ✅ 버튼은 모바일에서 아이콘만 / PC에서 텍스트 표시
   const actionBtnBase = compact
     ? "h-9 w-9 inline-flex items-center justify-center rounded-xl text-sm disabled:opacity-50"
-    : "px-3 py-2 rounded-xl text-sm disabled:opacity-50";
+    : "h-10 lg:h-9 px-3 inline-flex items-center justify-center rounded-xl text-sm disabled:opacity-50";
 
-    function cx(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
-
-const btnBase =
-  "inline-flex items-center justify-center rounded-lg px-2.5 py-1.5 text-xs font-medium " +
-  "border border-transparent transition-all duration-150 " +
-  "disabled:opacity-50 disabled:pointer-events-none";
-
-const btnSecondary =
-  "bg-zinc-800 hover:bg-zinc-700 text-zinc-100";
-
-const btnChipActive =
-  "border border-emerald-900/40 bg-emerald-950/30 text-emerald-200 hover:bg-emerald-950/40";
-
-const btnChipInactive =
-  "bg-zinc-800 hover:bg-zinc-700 text-zinc-100";
+  function cx(...classes: Array<string | false | null | undefined>) {
+    return classes.filter(Boolean).join(" ");
+  }
 
   return (
-    <div
-      className={outerCls}
-      onClick={() => onOpenDetails(a.id)}
-      role="button"
-      tabIndex={0}
-    >
-      <div className="flex items-start justify-between gap-3">
-        {/* ✅ left area gets real space */}
+    <div className={outerCls} onClick={() => onOpenDetails(a.id)} role="button" tabIndex={0}>
+      {/* ✅ 모바일: 세로 스택 가능 / PC: 좌-우 */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        {/* left */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
             {pinned ? (
               <span className="text-xs px-2 py-1 rounded-full border border-emerald-900/40 bg-emerald-950/30 text-emerald-200 font-semibold whitespace-nowrap">
                 📌 Focus
@@ -100,23 +79,15 @@ const btnChipInactive =
             ) : null}
 
             {contextLabel ? (
-              <span className={`${badgeBase} bg-zinc-900/50 border border-zinc-800 text-zinc-200`}>
-                {contextLabel}
-              </span>
+              <span className={`${badgeBase} bg-zinc-900/50 border border-zinc-800 text-zinc-200`}>{contextLabel}</span>
             ) : null}
 
-            <div className="font-semibold truncate">
+            {/* ✅ 제목: 모바일 세로찢김 방지 */}
+            <div className="font-semibold min-w-0 flex-1 truncate">
               {a.company} <span className="text-zinc-400 font-normal">/</span> {a.role}
             </div>
 
-            <span
-              className={[
-                badgeBase,
-                stageBadgeClass(a.stage),
-              ].join(" ")}
-            >
-              {stageLabel(a.stage)}
-            </span>
+            <span className={[badgeBase, stageBadgeClass(a.stage)].join(" ")}>{stageLabel(a.stage)}</span>
 
             {showEventBadge && eventType ? (
               <span className={[badgeBase, eventBadgeClass(eventType)].join(" ")}>
@@ -124,72 +95,78 @@ const btnChipInactive =
               </span>
             ) : null}
 
-            {topBadge ? (
-              <span className={[badgeBase, topBadge.cls].join(" ")}>
-                {topBadge.text}
-              </span>
-            ) : null}
+            {topBadge ? <span className={[badgeBase, topBadge.cls].join(" ")}>{topBadge.text}</span> : null}
           </div>
 
           {a.next_action?.trim() ? (
-            <div className="mt-2 text-sm text-zinc-300 line-clamp-1">
+            <div className="mt-2 text-sm text-zinc-300 min-w-0 whitespace-normal break-words">
               <span className="text-zinc-400">Next:</span> {a.next_action.trim()}
             </div>
           ) : null}
 
-          {/* ✅ compact일 때는 2줄로 보여서 '...' 방지 */}
+          {/* ✅ 날짜 메타: 모바일에서 자연스럽게 줄바꿈되게 */}
           {compact ? (
-            <div className="mt-2 text-xs text-zinc-500 leading-relaxed">
+            <div className="mt-2 text-xs text-zinc-500 leading-relaxed min-w-0 whitespace-normal break-words">
               <div>마감: {formatDateOnly(a.deadline_at)}</div>
               <div>팔로업: {formatDateOnly(a.followup_at)}</div>
             </div>
           ) : (
-            <div className="mt-2 text-xs text-zinc-500">
-              마감: {formatDateOnly(a.deadline_at)} · 팔로업: {formatDateOnly(a.followup_at)}
+            <div className="mt-2 text-xs text-zinc-500 min-w-0 whitespace-normal break-words">
+              <span className="inline-block mr-2">마감: {formatDateOnly(a.deadline_at)}</span>
+              <span className="inline-block">팔로업: {formatDateOnly(a.followup_at)}</span>
             </div>
           )}
         </div>
 
         {/* actions */}
         <div
-          className={["flex items-center", compact ? "gap-1" : "gap-2", "shrink-0"].join(" ")}
+          className={cx(
+            "flex items-center flex-wrap shrink-0",
+            compact ? "gap-1" : "gap-2",
+            // ✅ 모바일: 아래로 내려오면 왼쪽 정렬 / PC: 오른쪽 정렬
+            "justify-start sm:justify-end w-full sm:w-auto"
+          )}
           onClick={(e) => e.stopPropagation()}
         >
           <button
-  onClick={() => onTogglePin(a.id)}
-  disabled={busy}
-  className={cx(
-    actionBtnBase,
-    pinned
-      ? "border border-emerald-900/40 bg-emerald-950/30 text-emerald-200 hover:bg-emerald-950/40"
-      : "bg-zinc-800 hover:bg-zinc-700 text-zinc-100"
-  )}
-  title={pinned ? "Focus 핀 해제" : "Focus에 핀(최대 3개)"}
-  aria-label={pinned ? "Focus 핀 해제" : "Focus 핀"}
->
-  {compact ? "📌" : pinned ? "📌 해제" : "📌 핀"}
-</button>
+            onClick={() => onTogglePin(a.id)}
+            disabled={busy}
+            className={cx(
+              actionBtnBase,
+              pinned
+                ? "border border-emerald-900/40 bg-emerald-950/30 text-emerald-200 hover:bg-emerald-950/40"
+                : "bg-zinc-800 hover:bg-zinc-700 text-zinc-100"
+            )}
+            title={pinned ? "Focus 핀 해제" : "Focus에 핀"}
+            aria-label={pinned ? "Focus 핀 해제" : "Focus 핀"}
+          >
+            {/* ✅ 모바일 텍스트 숨김 */}
+            <span aria-hidden>📌</span>
+            {!compact ? <span className="hidden lg:inline ml-2">{pinned ? "해제" : "핀"}</span> : null}
+          </button>
 
-<button
-  onClick={() => onDone(a.id)}
-  disabled={busy}
-  className={cx(actionBtnBase, "bg-zinc-800 hover:bg-zinc-700 text-zinc-100")}
-  title="next_action, followup_at 비우기"
-  aria-label="완료"
->
-  {compact ? "✅" : "✅ 완료"}
-</button>
+          <button
+            onClick={() => onDone(a.id)}
+            disabled={busy}
+            className={cx(actionBtnBase, "bg-zinc-800 hover:bg-zinc-700 text-zinc-100")}
+            title="완료(next/followup 비움)"
+            aria-label="완료"
+          >
+            <span aria-hidden>✅</span>
+            {!compact ? <span className="hidden lg:inline ml-2">완료</span> : null}
+          </button>
+
           <details className="relative">
             <summary
-              className={[
+              className={cx(
                 "list-none cursor-pointer",
-                compact
-                  ? "h-9 w-9 inline-flex items-center justify-center rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm"
-                  : "px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm",
-              ].join(" ")}
+                actionBtnBase,
+                "bg-zinc-800 hover:bg-zinc-700 text-zinc-100"
+              )}
               title="팔로업 미루기"
             >
-              {compact ? "⏩" : "⏩ 미루기"}
+              <span aria-hidden>⏩</span>
+              {!compact ? <span className="hidden lg:inline ml-2">미루기</span> : null}
             </summary>
             <div className="absolute right-0 mt-2 w-40 rounded-xl border border-zinc-800 bg-zinc-950 shadow-xl p-1 z-10">
               <button
@@ -211,12 +188,11 @@ const btnChipInactive =
 
           <details className="relative">
             <summary
-              className={[
+              className={cx(
                 "list-none cursor-pointer",
-                compact
-                  ? "h-9 w-9 inline-flex items-center justify-center rounded-xl bg-zinc-900/40 border border-zinc-800 hover:bg-zinc-800 text-sm"
-                  : "px-3 py-2 rounded-xl bg-zinc-900/40 border border-zinc-800 hover:bg-zinc-800 text-sm",
-              ].join(" ")}
+                actionBtnBase,
+                "bg-zinc-900/40 border border-zinc-800 hover:bg-zinc-800 text-zinc-100"
+              )}
               aria-label="더보기"
             >
               ⋯
@@ -262,7 +238,7 @@ const btnChipInactive =
           href={safeHttpUrl(a.url) ?? undefined}
           target="_blank"
           rel="noreferrer"
-          className="block mt-3 text-sm text-zinc-400 hover:text-zinc-200 break-all"
+          className="block mt-3 text-sm text-zinc-400 hover:text-zinc-200 min-w-0 whitespace-normal break-words"
           onClick={(e) => e.stopPropagation()}
         >
           {a.url}

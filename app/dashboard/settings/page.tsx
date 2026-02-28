@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 import SubpageHeader from "../../../components/dashboard/common/SubpageHeader";
 
 type ViewMode = "TODAY" | "LIST" | "CALENDAR" | "REPORT";
+type ProfileSettingsRow = {
+  default_view_mode?: ViewMode | null;
+  today_window_days?: number | null;
+};
 
 export default function SettingsPage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -20,7 +24,7 @@ export default function SettingsPage() {
     window.setTimeout(() => setToast(null), 2400);
   }
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     const { data: auth } = await supabase.auth.getUser();
     const u = auth?.user;
@@ -35,16 +39,16 @@ export default function SettingsPage() {
       .eq("user_id", u.id)
       .single();
 
-    setDefaultView(((data as any)?.default_view_mode ?? "TODAY") as ViewMode);
-    setTodayWindowDays((((data as any)?.today_window_days ?? 3) as number) === 7 ? 7 : 3);
+    const settings = (data as ProfileSettingsRow | null) ?? null;
+    setDefaultView(settings?.default_view_mode ?? "TODAY");
+    setTodayWindowDays((settings?.today_window_days ?? 3) === 7 ? 7 : 3);
 
     setLoading(false);
-  }
+  }, [supabase]);
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
 
   async function save() {
     setSaving(true);

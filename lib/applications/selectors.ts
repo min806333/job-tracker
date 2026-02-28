@@ -155,9 +155,7 @@ export function safeHttpUrl(url: string | null) {
 
 // ===== LocalStorage safe helpers =====
 export function uid() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const c: any = globalThis.crypto;
-  if (c?.randomUUID) return c.randomUUID();
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `t_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 

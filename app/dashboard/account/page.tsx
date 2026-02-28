@@ -1,10 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 import SubpageHeader from "../../../components/dashboard/common/SubpageHeader";
 
-type Plan = "free" | "pro";
+type Plan = "free" | "pro" | "grace";
+type AuthUser = {
+  id: string;
+  email?: string | null;
+  created_at?: string | null;
+};
+type ProfileRow = {
+  plan?: Plan | null;
+  plan_status?: string | null;
+};
+type ProfileSettingsRow = {
+  display_name?: string | null;
+  timezone?: string | null;
+};
 
 export default function AccountPage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
@@ -28,11 +41,11 @@ export default function AccountPage() {
     window.setTimeout(() => setToast(null), 2400);
   }
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
 
     const { data: auth } = await supabase.auth.getUser();
-    const u = auth?.user;
+    const u = (auth?.user as AuthUser | null) ?? null;
     if (!u) {
       location.href = "/login";
       return;
@@ -40,7 +53,7 @@ export default function AccountPage() {
 
     setUserId(u.id);
     setEmail(u.email ?? "");
-    setCreatedAt((u as any)?.created_at ?? "");
+    setCreatedAt(u.created_at ?? "");
 
     // profiles (read-only)
     const { data: prof } = await supabase
@@ -49,8 +62,9 @@ export default function AccountPage() {
       .eq("id", u.id)
       .single();
 
-    setPlan((prof as any)?.plan === "pro" ? "pro" : "free");
-    setPlanStatus((prof as any)?.plan_status ?? "active");
+    const profRow = (prof as ProfileRow | null) ?? null;
+    setPlan(profRow?.plan === "pro" ? "pro" : profRow?.plan === "grace" ? "grace" : "free");
+    setPlanStatus(profRow?.plan_status ?? "active");
 
     // profile_settings (editable)
     const { data: s } = await supabase
@@ -59,16 +73,16 @@ export default function AccountPage() {
       .eq("user_id", u.id)
       .single();
 
-    setDisplayName((s as any)?.display_name ?? "");
-    setTimezone((s as any)?.timezone ?? "");
+    const settings = (s as ProfileSettingsRow | null) ?? null;
+    setDisplayName(settings?.display_name ?? "");
+    setTimezone(settings?.timezone ?? "");
 
     setLoading(false);
-  }
+  }, [supabase]);
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
 
   async function save() {
     setSaving(true);
@@ -119,7 +133,7 @@ export default function AccountPage() {
               <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1">
                 <span className="text-xs text-zinc-400">Plan</span>
                 <span className={`text-xs font-semibold ${plan === "pro" ? "text-emerald-400" : "text-zinc-100"}`}>
-                  {plan.toUpperCase()}
+                  {plan === "grace" ? "GRACE" : plan.toUpperCase()}
                 </span>
                 <span className="text-xs text-zinc-600">•</span>
                 <span className="text-xs text-zinc-400">{planStatus}</span>

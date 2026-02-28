@@ -99,23 +99,24 @@ function AccordionItem({
   );
 }
 
-export default function SupportPage({
+export default async function SupportPage({
   searchParams,
 }: {
-  searchParams?: { cat?: string; q?: string };
+  searchParams?: Promise<{ cat?: string; q?: string }>;
 }) {
+  const resolvedSearchParams = await searchParams;
   const articles = getArticles();
 
   const categories = Object.keys(CATEGORY_LABEL) as HelpCategory[];
 
-  const catRaw = searchParams?.cat?.trim();
+  const catRaw = resolvedSearchParams?.cat?.trim();
 
 const cat: HelpCategory | undefined =
   catRaw && categories.includes(catRaw as HelpCategory)
     ? (catRaw as HelpCategory)
     : undefined;
 
-  const q = (searchParams?.q ?? "").trim().toLowerCase();
+  const q = (resolvedSearchParams?.q ?? "").trim().toLowerCase();
 
   const filtered = articles.filter((a) => {
     const byCat = cat ? a.category === cat : true;
@@ -138,7 +139,7 @@ const cat: HelpCategory | undefined =
   <div className="space-y-6">
 
     <div className="text-xs text-red-400">
-      catRaw: {String(searchParams?.cat)} / cat: {String(cat)} / filtered: {filtered.length} / total: {articles.length}
+      catRaw: {String(resolvedSearchParams?.cat)} / cat: {String(cat)} / filtered: {filtered.length} / total: {articles.length}
     </div>
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
         <h1 className="text-lg font-semibold text-zinc-100">고객센터</h1>
@@ -150,7 +151,7 @@ const cat: HelpCategory | undefined =
           <div className="flex gap-2">
             <input
               name="q"
-              defaultValue={searchParams?.q ?? ""}
+              defaultValue={resolvedSearchParams?.q ?? ""}
               placeholder="검색: 예) Focus, 캘린더, 제한, 데이터…"
               className="w-full rounded-xl border border-zinc-800 bg-zinc-950/50 px-4 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
             />

@@ -2,8 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 export async function middleware(req: NextRequest) {
-  let res = NextResponse.next();
-
+  const res = NextResponse.next();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -22,12 +21,20 @@ export async function middleware(req: NextRequest) {
     }
   );
 
-  // 세션 확인 + 필요시 갱신
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    const nextPath = `${req.nextUrl.pathname}${req.nextUrl.search}`;
+    const redirect = NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(nextPath)}`, req.url));
+    for (const cookie of res.cookies.getAll()) redirect.cookies.set(cookie);
+    return redirect;
+  }
 
   return res;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/dashboard/:path*"],
 };

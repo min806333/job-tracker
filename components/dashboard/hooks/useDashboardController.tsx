@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 
 import type {
@@ -47,7 +47,7 @@ import type { Toast } from "../common/ToastViewport";
 import type { TutorialStep } from "../common/TutorialOverlay";
 
 /** ===== SaaS Plan / Entitlements (MVP) ===== */
-type Plan = "free" | "pro";
+export type Plan = "free" | "pro" | "grace";
 type Entitlements = {
   plan: Plan;
   maxApplications: number;
@@ -64,60 +64,62 @@ export type UseDashboardControllerProps = {
   initialApplications: Application[];
 };
 
-
 export function useDashboardController({ userId, userEmail, initialApplications }: UseDashboardControllerProps) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+
   // ===== Profile menu drawer =====
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  
+
   // ===== SaaS plan state =====
-const [plan, setPlan] = useState<Plan>("free");
-const [entitlements, setEntitlements] = useState<Entitlements>({
-  plan: "free",
-  maxApplications: 100, // ✅ FREE: Applications 최대 100
-  maxFocusPins: 3,      // (유지해도 됨. 단, FREE에서 핀 제한은 걸지 않음)
-  canUseReports: false,
-  canCalendarDrag: false,
-  canExport: false,     // ✅ FREE: CSV Export 제한
-});
-const [planLoading, setPlanLoading] = useState(false);
+  const [plan, setPlan] = useState<Plan>("free");
+  const [entitlements, setEntitlements] = useState<Entitlements>({
+    plan: "free",
+    maxApplications: 100, // ✅ FREE: Applications 최대 100
+    maxFocusPins: 3, // (유지해도 됨. 단, FREE에서 핀 제한은 걸지 않음)
+    canUseReports: false,
+    canCalendarDrag: false,
+    canExport: false, // ✅ FREE: CSV Export 제한
+  });
+  const [planLoading, setPlanLoading] = useState(false);
 
   // ===== Settings (profile_settings) =====
-const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
-async function loadUserSettingsOnce() {
-  if (!userId) return;
-  if (settingsLoaded) return;
+  async function loadUserSettingsOnce() {
+    if (!userId) return;
+    if (settingsLoaded) return;
 
-  const { data: s, error } = await supabase
-    .from("profile_settings")
-    .select("default_view_mode, today_window_days")
-    .eq("user_id", userId)
-    .single();
+    const { data: s, error } = await supabase
+      .from("profile_settings")
+      .select("default_view_mode, today_window_days")
+      .eq("user_id", userId)
+      .single();
 
-  if (!error && s) {
-    const mv = (s as any).default_view_mode as ViewMode | undefined;
-    const tw = (s as any).today_window_days as number | undefined;
+    if (!error && s) {
+      const settings = s as {
+        default_view_mode?: ViewMode | null;
+        today_window_days?: number | null;
+      };
+      const mv = settings.default_view_mode ?? undefined;
+      const tw = settings.today_window_days ?? undefined;
 
-    if (mv) setViewMode(mv);
-    if (tw === 7) setTodayWindowDays(7);
-    else if (tw === 3) setTodayWindowDays(3);
+      if (mv) setViewMode(mv);
+      if (tw === 7) setTodayWindowDays(7);
+      else if (tw === 3) setTodayWindowDays(3);
+    }
+
+    setSettingsLoaded(true);
   }
 
-  setSettingsLoaded(true);
-}
-
-// ✅ userId 들어오면 1회 로드
-useEffect(() => {
-  void loadUserSettingsOnce();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [userId]);
+  // ✅ userId 들어오면 1회 로드
+  useEffect(() => {
+    void loadUserSettingsOnce();
+  }, [userId]);
 
   // ===== Core state =====
   const [apps, setApps] = useState(() => initialApplications ?? []);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [busyBatch, setBusyBatch] = useState(false);
-  
 
   const [viewMode, setViewMode] = useState<ViewMode>("TODAY");
   const [todayWindowDays, setTodayWindowDays] = useState<3 | 7>(3);
@@ -129,13 +131,13 @@ useEffect(() => {
   // ===== Updates drawer (Paywall도 여기로 재활용) =====
   const [updatesOpen, setUpdatesOpen] = useState(false);
 
-const [paywallOpen, setPaywallOpen] = useState(false);
-const [paywallReason, setPaywallReason] = useState<string>("");
+  const [paywallOpen, setPaywallOpen] = useState(false);
+  const [paywallReason, setPaywallReason] = useState<string>("");
 
-function openPaywall(reason?: string) {
-  setPaywallReason(reason ?? "");
-  setPaywallOpen(true);
-}
+  function openPaywall(reason?: string) {
+    setPaywallReason(reason ?? "");
+    setPaywallOpen(true);
+  }
 
   function guard(feature: FeatureKey): boolean {
     // 로딩 중에는 막지 않고(UX), 서버/DB에서 최종 검증
@@ -154,9 +156,8 @@ function openPaywall(reason?: string) {
       return false;
     }
     if (feature === "focus_pin") {
-  // ✅ 진실: FREE에서 핀 자체는 막지 않음.
-  // 제한은 TodayTab에서 "표시 개수(1 vs 3)"로만 처리한다.
-      
+      // ✅ 진실: FREE에서 핀 자체는 막지 않음.
+      // 제한은 TodayTab에서 "표시 개수(1 vs 3)"로만 처리한다.
       return true;
     }
     if (feature === "create_application") {
@@ -198,21 +199,24 @@ function openPaywall(reason?: string) {
         .single();
 
       // RLS/데이터 없을 경우 대비: 기본 free
-      const p: Plan = (prof?.plan as Plan) === "pro" ? "pro" : "free";
+      const rawPlan = prof?.plan as Plan | null | undefined;
+      const p: Plan = rawPlan === "pro" ? "pro" : rawPlan === "grace" ? "grace" : "free";
       if (!profErr) setPlan(p);
 
       // 2) plan_limits에서 제한 조회
+      const planForLimits: "free" | "pro" = p === "grace" ? "pro" : p;
       const { data: lim, error: limErr } = await supabase
         .from("plan_limits")
         .select("max_applications, max_focus_pins, enable_reports, enable_calendar_drag, enable_exports")
-        .eq("plan", p)
+        .eq("plan", planForLimits)
         .single();
 
       if (!limErr && lim) {
         setEntitlements({
           plan: p,
-          maxApplications: lim.max_applications ?? (p === "pro" ? 5000 : 100),
-          maxFocusPins: lim.max_focus_pins ?? (p === "pro" ? 10 : 3),
+          maxApplications:
+            p === "grace" ? 100 : lim.max_applications ?? (planForLimits === "pro" ? 5000 : 100),
+          maxFocusPins: lim.max_focus_pins ?? (planForLimits === "pro" ? 10 : 3),
           canUseReports: !!lim.enable_reports,
           canCalendarDrag: !!lim.enable_calendar_drag,
           canExport: !!lim.enable_exports,
@@ -221,11 +225,11 @@ function openPaywall(reason?: string) {
         // fallback
         setEntitlements({
           plan: p,
-          maxApplications: p === "pro" ? 5000 : 100,
-          maxFocusPins: p === "pro" ? 10 : 3,
-          canUseReports: p === "pro",
-          canCalendarDrag: p === "pro",
-          canExport: p === "pro",
+          maxApplications: p === "grace" ? 100 : p === "pro" ? 5000 : 100,
+          maxFocusPins: planForLimits === "pro" ? 10 : 3,
+          canUseReports: planForLimits === "pro",
+          canCalendarDrag: planForLimits === "pro",
+          canExport: planForLimits === "pro",
         });
       }
     } finally {
@@ -236,7 +240,6 @@ function openPaywall(reason?: string) {
   // plan load on mount
   useEffect(() => {
     void loadPlanAndEntitlements();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   // ===== Tutorial =====
@@ -325,12 +328,6 @@ function openPaywall(reason?: string) {
     undoRef.current = undoStack;
   }, [undoStack]);
 
-  function registerUndo(label: string, undo: () => Promise<void>) {
-    const action: UndoAction = { id: uid(), ts: new Date().toISOString(), label, undo };
-    setUndoStack((prev) => [action, ...prev].slice(0, 20));
-    return action;
-  }
-
   async function performUndo(action: UndoAction) {
     // 먼저 제거해서 중복 실행 방지
     setUndoStack((prev) => prev.filter((a) => a.id !== action.id));
@@ -391,25 +388,25 @@ function openPaywall(reason?: string) {
   }
 
   function togglePin(id: string) {
-  setPins((prev) => {
-    const exists = prev.includes(id);
+    setPins((prev) => {
+      const exists = prev.includes(id);
 
-    if (exists) {
-      const next = prev.filter((x) => x !== id);
+      if (exists) {
+        const next = prev.filter((x) => x !== id);
+        persistPins(next);
+        pushToast({ tone: "success", message: "Focus 핀 해제 ✓" });
+        pushLog("PIN", "Focus 핀 해제", id);
+        return next;
+      }
+
+      // ✅ 진실: 핀 자체는 막지 않음 (표시 제한은 TodayTab에서 1 vs 3)
+      const next = [id, ...prev];
       persistPins(next);
-      pushToast({ tone: "success", message: "Focus 핀 해제 ✓" });
-      pushLog("PIN", "Focus 핀 해제", id);
+      pushToast({ tone: "success", message: "Focus에 핀했어요 📌" });
+      pushLog("PIN", "Focus 핀 추가", id);
       return next;
-    }
-
-    // ✅ 진실: 핀 자체는 막지 않음 (표시 제한은 TodayTab에서 1 vs 3)
-    const next = [id, ...prev];
-    persistPins(next);
-    pushToast({ tone: "success", message: "Focus에 핀했어요 📌" });
-    pushLog("PIN", "Focus 핀 추가", id);
-    return next;
-  });
-}
+    });
+  }
 
   // ===== Selection helpers =====
   function selectAllVisible(visibleIds: string[]) {
@@ -464,9 +461,9 @@ function openPaywall(reason?: string) {
   }, []);
 
   useEffect(() => {
-  const dismissed = safeLSGet(LS.onboardingDismissed) === "1";
-  if (!dismissed && (apps?.length ?? 0) === 0) setShowOnboarding(true);
-}, [apps]);
+    const dismissed = safeLSGet(LS.onboardingDismissed) === "1";
+    if (!dismissed && (apps?.length ?? 0) === 0) setShowOnboarding(true);
+  }, [apps]);
 
   function dismissOnboarding() {
     safeLSSet(LS.onboardingDismissed, "1");
@@ -925,7 +922,6 @@ function openPaywall(reason?: string) {
     });
     lastSavedSigRef.current = baseline;
     setAutoSaveState("idle");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
   const draftSig = useMemo(() => {
@@ -1201,6 +1197,7 @@ function openPaywall(reason?: string) {
       .filter((a) => isActiveStage(a.stage));
   }, [pins, apps]);
 
+  // ✅ actionQueue는 actionQueue만 계산하고 끝(여기 안에 todayXXX 넣으면 스코프 문제 생김)
   const actionQueue = useMemo(() => {
     const active = apps.filter((a) => isActiveStage(a.stage));
     // 큐 후보: deadline/followup/next_action 중 하나라도 있으면 포함
@@ -1218,6 +1215,126 @@ function openPaywall(reason?: string) {
 
     return scored;
   }, [apps, pinnedSet]);
+
+  /** =========================
+   *  TODAY 몰입 UX (A안)
+   *  - Activity Streak
+   *  - Today Score
+   *  - Today Focus (Top 1 vs 3 by plan)
+   *  - Today Empty State
+   *  ========================= */
+
+  // 로컬 날짜키 (YYYY-MM-DD) - 사용자의 로컬 타임존 기준
+  function toLocalDateKey(isoOrTs: string) {
+    const d = new Date(isoOrTs);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function shiftLocalDateKey(dateKey: string, days: number) {
+    const [y, m, d] = dateKey.split("-").map(Number);
+    const base = new Date(y, (m ?? 1) - 1, d ?? 1);
+    base.setDate(base.getDate() + days);
+    return toLocalDateKey(base.toISOString());
+  }
+
+  // Today Score 규칙
+  const SCORE_BY_TYPE: Partial<Record<ActivityType, number>> = {
+    CREATE: 10,
+    STAGE: 5,
+    MOVE_DATE: 3,
+    UPDATE: 2,
+    PIN: 1,
+    BATCH: 2,
+    UNDO: 1,
+    UNDO_DELETE: 1,
+  };
+
+  const todayMeta = useMemo(() => {
+    const todayKey = toLocalDateKey(new Date().toISOString());
+
+    const daySet = new Set<string>();
+    let scoreToday = 0;
+
+    for (const l of logs) {
+      const k = toLocalDateKey(l.ts);
+      daySet.add(k);
+      if (k === todayKey) scoreToday += SCORE_BY_TYPE[l.type] ?? 0;
+    }
+
+    // streak: 오늘부터 거꾸로 연속 체크
+    let streak = 0;
+    for (let i = 0; i < 370; i++) {
+      const k = shiftLocalDateKey(todayKey, -i);
+      if (daySet.has(k)) streak++;
+      else break;
+    }
+
+    return {
+      todayKey,
+      scoreToday,
+      streak,
+      hasActivityToday: scoreToday > 0,
+    };
+  }, [logs]);
+
+  const todayFocusCandidates = useMemo(() => {
+    const candidateIds = new Set<string>();
+    const list: Application[] = [];
+
+    const pushUnique = (a: Application) => {
+      if (!a) return;
+      if (candidateIds.has(a.id)) return;
+      candidateIds.add(a.id);
+      list.push(a);
+    };
+
+    for (const a of todayData.dueSoon) pushUnique(a);
+    for (const a of todayData.followupSoon) pushUnique(a);
+    for (const a of todayData.actionOnly) pushUnique(a);
+
+    list.sort((a, b) => priorityScore(b) - priorityScore(a));
+    return list;
+  }, [todayData]);
+
+  const todayFocusTop3 = useMemo(() => todayFocusCandidates.slice(0, 3), [todayFocusCandidates]);
+
+  const todayFocusVisible = useMemo(() => {
+    const n = plan === "free" ? 1 : 3;
+    return todayFocusTop3.slice(0, n);
+  }, [todayFocusTop3, plan]);
+
+  const todayEmptyState = useMemo(() => {
+    const hasAnyTodo =
+      todayData.dueSoon.length > 0 ||
+      todayData.followupSoon.length > 0 ||
+      todayData.actionOnly.length > 0;
+
+    if (!todayMeta.hasActivityToday && !hasAnyTodo) {
+      return {
+        kind: "EMPTY_ALL" as const,
+        title: "오늘은 아직 아무 활동이 없어요.",
+        body: "작은 행동 하나가 합격으로 이어져요. 회사/직무만 먼저 추가해볼까요?",
+      };
+    }
+
+    if (!todayMeta.hasActivityToday && hasAnyTodo) {
+      return {
+        kind: "EMPTY_ACTION" as const,
+        title: "오늘은 아직 체크한 게 없어요.",
+        body: "아래 항목 중 하나만 처리해도 streak가 이어져요 🔥",
+      };
+    }
+
+    return null;
+  }, [
+    todayMeta.hasActivityToday,
+    todayData.dueSoon.length,
+    todayData.followupSoon.length,
+    todayData.actionOnly.length,
+  ]);
 
   // ===== Summary copy (toast로 피드백) =====
   function buildWeeklyOneLineSummary() {
@@ -1303,7 +1420,9 @@ function openPaywall(reason?: string) {
     lines.push("");
 
     lines.push(`✅ Today(${todayWindowDays}일, 생성 시각: ${now.toLocaleString()})`);
-    lines.push(`- 마감 ${todayData.dueSoon.length} / 팔로업 ${todayData.followupSoon.length} / next_action-only ${todayData.actionOnly.length}`);
+    lines.push(
+      `- 마감 ${todayData.dueSoon.length} / 팔로업 ${todayData.followupSoon.length} / next_action-only ${todayData.actionOnly.length}`
+    );
     lines.push("");
     lines.push("(요약 생성 완료)");
 
@@ -1370,7 +1489,12 @@ function openPaywall(reason?: string) {
           const base = current ? new Date(current) : new Date();
           const iso = addDays(base, days).toISOString();
 
-          const { data, error } = await supabase.from("applications").update({ followup_at: iso }).eq("id", id).select("*").single();
+          const { data, error } = await supabase
+            .from("applications")
+            .update({ followup_at: iso })
+            .eq("id", id)
+            .select("*")
+            .single();
           if (error) throw error;
           return data as Application;
         })
@@ -1405,7 +1529,12 @@ function openPaywall(reason?: string) {
       const updates = await Promise.all(
         ids.map(async (id) => {
           const position = idToPos.get(id) ?? baseMax + 1;
-          const { data, error } = await supabase.from("applications").update({ stage, position }).eq("id", id).select("*").single();
+          const { data, error } = await supabase
+            .from("applications")
+            .update({ stage, position })
+            .eq("id", id)
+            .select("*")
+            .single();
           if (error) throw error;
           return data as Application;
         })
@@ -1434,27 +1563,27 @@ function openPaywall(reason?: string) {
     clearSelection();
   }
 
- function batchPin(ids: string[]) {
-  const want = ids.filter((id) => !pinnedSet.has(id));
-  if (want.length === 0) {
-    pushToast({ tone: "default", message: "이미 모두 핀 되어 있어요." });
-    return;
-  }
-
-  setPins((prev) => {
-    const next = [...prev];
-    for (const id of want) {
-      if (next.includes(id)) continue;
-      next.unshift(id);
+  function batchPin(ids: string[]) {
+    const want = ids.filter((id) => !pinnedSet.has(id));
+    if (want.length === 0) {
+      pushToast({ tone: "default", message: "이미 모두 핀 되어 있어요." });
+      return;
     }
-    persistPins(next);
-    return next;
-  });
 
-  // ✅ 핀 자체는 제한 없음 (표시 제한은 TodayTab에서)
-  pushToast({ tone: "success", message: `Focus 핀 적용 ✓ (${want.length}개)` });
-  pushLog("BATCH", `배치 Focus 핀 (${want.length}개)`);
-}
+    setPins((prev) => {
+      const next = [...prev];
+      for (const id of want) {
+        if (next.includes(id)) continue;
+        next.unshift(id);
+      }
+      persistPins(next);
+      return next;
+    });
+
+    // ✅ 핀 자체는 제한 없음 (표시 제한은 TodayTab에서)
+    pushToast({ tone: "success", message: `Focus 핀 적용 ✓ (${want.length}개)` });
+    pushLog("BATCH", `배치 Focus 핀 (${want.length}개)`);
+  }
 
   function batchUnpin(ids: string[]) {
     setPins((prev) => {
@@ -1572,8 +1701,7 @@ function openPaywall(reason?: string) {
         id: "report",
         title: "리포트 & 업데이트 로그",
         body:
-          "리포트에서 Stage/Source/Funnel을 확인하고,\n" +
-          "최근 업데이트 로그로 내가 무엇을 했는지 추적할 수 있어요.",
+          "리포트에서 Stage/Source/Funnel을 확인하고,\n" + "최근 업데이트 로그로 내가 무엇을 했는지 추적할 수 있어요.",
         targetRef: reportTabRef,
         accent: "단축키: R(리포트), U(업데이트 로그)",
       },
@@ -1683,6 +1811,12 @@ function openPaywall(reason?: string) {
     queueVisible,
     queueHasMore,
 
+    // ✅ TODAY 몰입 UX
+    todayMeta,
+    todayFocusTop3,
+    todayFocusVisible,
+    todayEmptyState,
+
     // calendar
     calendarApps,
     quickAddForDate,
@@ -1783,7 +1917,6 @@ function openPaywall(reason?: string) {
     busyId,
     todayWindowDays,
     setTodayWindowDays,
-
   } as const;
 }
 

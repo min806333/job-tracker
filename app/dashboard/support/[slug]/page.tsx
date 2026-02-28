@@ -49,12 +49,13 @@ function renderSimpleMarkdown(md: string) {
   return <div className="space-y-2">{out}</div>;
 }
 
-export default function SupportArticlePage({
+export default async function SupportArticlePage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
-  const article = getArticleBySlug(params.slug);
+  const { slug } = await params;
+  const article = getArticleBySlug(slug);
   if (!article) return notFound();
 
   const composeHref = `/dashboard/support?subject=${encodeURIComponent(

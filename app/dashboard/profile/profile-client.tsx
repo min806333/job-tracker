@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
 
-type Plan = "free" | "pro";
+type Plan = "free" | "pro" | "grace";
 
 type ProfileRow = {
   id: string;
@@ -95,7 +95,7 @@ export default function ProfileClient() {
       if (!alive) return;
 
       if (!error && prof) {
-        const p = (prof as ProfileRow).plan === "pro" ? "pro" : "free";
+        const p = (prof as ProfileRow).plan === "pro" ? "pro" : (prof as ProfileRow).plan === "grace" ? "grace" : "free";
         setPlan(p);
         setPlanStatus((prof as ProfileRow).plan_status ?? "active");
       } else {
@@ -133,7 +133,7 @@ export default function ProfileClient() {
   function openPlan() {
     // 지금은 상태 확인용 (추후 결제 연결 시 /dashboard/plan 으로)
     pushToast(
-      `내 플랜: ${plan === "pro" ? "SUPPORTER" : "FREE"} (${planStatus})`
+      `내 플랜: ${plan === "pro" ? "SUPPORTER" : plan === "grace" ? "GRACE" : "FREE"} (${planStatus})`
     );
   }
 
@@ -160,7 +160,7 @@ export default function ProfileClient() {
           <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1">
             <span className="text-xs text-zinc-400">Plan</span>
             <span className="text-xs font-medium text-zinc-100">
-              {plan === "pro" ? "SUPPORTER" : "FREE"}
+              {plan === "pro" ? "SUPPORTER" : plan === "grace" ? "GRACE" : "FREE"}
             </span>
             <span className="text-xs text-zinc-500">•</span>
             <span className="text-xs text-zinc-400">{planStatus}</span>
@@ -182,7 +182,7 @@ export default function ProfileClient() {
           />
           <Item title="설정" desc="알림/테마/단축키(추후)" onClick={openSettings} />
 
-          <Item title="내 플랜" desc={`현재: ${plan === "pro" ? "SUPPORTER" : "FREE"}`} onClick={openPlan} />
+          <Item title="내 플랜" desc={`현재: ${plan === "pro" ? "SUPPORTER" : plan === "grace" ? "GRACE" : "FREE"}`} onClick={openPlan} />
 
           <Item title="도움말" desc="사용 가이드/FAQ" onClick={openHelp} />
           <Item title="고객센터" desc="문의/피드백" onClick={openSupport} />

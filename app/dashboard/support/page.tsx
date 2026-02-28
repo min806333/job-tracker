@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useEffect, useState } from "react";
+import { Suspense, useMemo, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   getArticles,
@@ -103,7 +103,7 @@ function AccordionItem({
   );
 }
 
-export default function SupportPage() {
+function SupportPageContent() {
   const sp = useSearchParams();
 
   const articles = getArticles();
@@ -299,5 +299,13 @@ export default function SupportPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SupportPage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-zinc-500">Loading support...</div>}>
+      <SupportPageContent />
+    </Suspense>
   );
 }

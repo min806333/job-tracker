@@ -32,7 +32,7 @@ export async function GET() {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  // 필요한 컬럼만
+  // Select only fields needed for calendar events.
   const { data: apps, error } = await supabase
     .from("applications")
     .select("id, company, role, url, stage, deadline_at, followup_at, next_action, source, created_at")
@@ -53,7 +53,7 @@ export async function GET() {
   }) => {
     const dtstart = toIcsDateTime(opts.startIso);
 
-    // 기본 30분짜리 일정으로 생성(캘린더에서 보기 좋게)
+    // Default 30-minute duration to make events visible in calendars.
     const endIso = new Date(new Date(opts.startIso).getTime() + 30 * 60 * 1000).toISOString();
     const dtend = toIcsDateTime(endIso);
 
@@ -68,41 +68,47 @@ export async function GET() {
         `DESCRIPTION:${escapeIcsText(opts.description)}`,
         opts.url ? `URL:${escapeIcsText(opts.url)}` : null,
         "END:VEVENT",
-      ].filter(Boolean).join("\r\n")
+      ]
+        .filter(Boolean)
+        .join("\r\n")
     );
   };
 
   for (const a of apps ?? []) {
     const base = `${a.company} / ${a.role}`.trim();
 
-    // 1) 마감일 이벤트
+    // 1) Deadline event
     if (a.deadline_at) {
       addEvent({
         uid: `${a.id}-deadline`,
         startIso: a.deadline_at,
-        title: `⏰ 마감: ${base}`,
+        title: `Deadline: ${base}`,
         description: [
           `Stage: ${a.stage}`,
           a.next_action ? `Next: ${a.next_action}` : null,
           a.source ? `Source: ${a.source}` : null,
           a.url ? `Link: ${a.url}` : null,
-        ].filter(Boolean).join("\n"),
+        ]
+          .filter(Boolean)
+          .join("\n"),
         url: a.url,
       });
     }
 
-    // 2) 팔로업 이벤트
+    // 2) Follow-up event
     if (a.followup_at) {
       addEvent({
         uid: `${a.id}-followup`,
         startIso: a.followup_at,
-        title: `📩 팔로업: ${base}`,
+        title: `Follow up: ${base}`,
         description: [
           `Stage: ${a.stage}`,
           a.next_action ? `Next: ${a.next_action}` : null,
           a.source ? `Source: ${a.source}` : null,
           a.url ? `Link: ${a.url}` : null,
-        ].filter(Boolean).join("\n"),
+        ]
+          .filter(Boolean)
+          .join("\n"),
         url: a.url,
       });
     }
@@ -112,7 +118,7 @@ export async function GET() {
     [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//Job Tracker//KO//EN",
+      "PRODID:-//Job Tracker//EN",
       "CALSCALE:GREGORIAN",
       "METHOD:PUBLISH",
       "X-WR-CALNAME:Job Tracker",

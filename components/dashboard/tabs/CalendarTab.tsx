@@ -3,7 +3,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import type { Application, Stage, CalendarEventType, CalendarDragPayload } from "../../../lib/applications/types";
 import type { DashboardController } from "../hooks/useDashboardController";
-import { calcDDay, ddayBadge } from "../../../lib/applications/selectors";
 import { CollapsibleSection } from "../common/CollapsibleSection";
 import { AppCard } from "../common/AppCard";
 
@@ -139,10 +138,7 @@ function CalendarView({
     return days;
   }, [cursor]);
 
-  const selectedEvents = useMemo(
-    () => eventsByDay.get(selectedDateKey) ?? [],
-    [eventsByDay, selectedDateKey]
-  );
+  const selectedEvents = useMemo(() => eventsByDay.get(selectedDateKey) ?? [], [eventsByDay, selectedDateKey]);
 
   const selectedDeadlines = useMemo(
     () => selectedEvents.filter((e) => e.type === "DEADLINE").map((e) => e.app),
@@ -163,7 +159,6 @@ function CalendarView({
     e.preventDefault();
     setDragOverKey(null);
 
-    // ✅ drop 직후 click 튐 방지
     suppressAutoAddRef.current = true;
     window.setTimeout(() => {
       suppressAutoAddRef.current = false;
@@ -222,7 +217,7 @@ function CalendarView({
 
         <div className="mt-4 grid grid-cols-7 gap-2 text-xs text-zinc-500">
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((w) => (
-            <div key={w} className="px-2">
+            <div key={w} className="px-1 sm:px-2">
               {w}
             </div>
           ))}
@@ -239,7 +234,9 @@ function CalendarView({
             const deadlineEvents = dayEvents.filter((x) => x.type === "DEADLINE");
             const followupEvents = dayEvents.filter((x) => x.type === "FOLLOWUP");
 
-            const chips = dayEvents.slice(0, 2);
+            // ✅ 모바일은 1개만(가독성/터치성), sm부터 2개
+            const chipLimit = 1; // base
+            const chips = dayEvents.slice(0, chipLimit);
             const overflow = Math.max(0, dayEvents.length - chips.length);
 
             const dropActive = dragOverKey === key;
@@ -249,40 +246,35 @@ function CalendarView({
                 key={key}
                 onClick={() => {
                   setSelectedDateKey(key);
-
-                  // ✅ 빈 날짜 클릭 → 그날 추가(바로)
                   if (dayEvents.length === 0 && !suppressAutoAddRef.current) {
                     onQuickAddForDate(key);
                   }
                 }}
                 onDragOver={(e) => {
-                  e.preventDefault(); // ✅ drop 활성화
+                  e.preventDefault();
                   setDragOverKey(key);
                 }}
                 onDragLeave={() => setDragOverKey(null)}
                 onDrop={(e) => onDropDay(e, key)}
                 className={[
-                  "rounded-xl border px-2 py-2 text-left min-h-[100px] transition relative",
+                  "rounded-xl border px-2 py-2 text-left transition relative",
+                  // ✅ 높이: 모바일 줄이기
+                  "min-h-[64px] sm:min-h-[84px] lg:min-h-[100px]",
                   isSelected
-                    ? "border-white border border-emerald-900/40 bg-emerald-950/30 text-emerald-200"
+                    ? "border border-emerald-900/40 bg-emerald-950/30"
                     : "border-zinc-800 bg-zinc-950/30 hover:bg-zinc-950/50",
                   inMonth ? "" : "opacity-60",
                   dropActive ? "ring-2 ring-white/50" : "",
                 ].join(" ")}
               >
                 <div className="flex items-center justify-between">
-                  <div
-                    className={[
-                      "text-sm font-semibold",
-                      isSelected ? "text-zinc-900" : "text-zinc-100",
-                    ].join(" ")}
-                  >
+                  <div className={["text-sm font-semibold", isSelected ? "text-emerald-200" : "text-zinc-100"].join(" ")}>
                     {d.getDate()}
                     {isToday ? (
                       <span
                         className={[
                           "ml-2 text-[10px] px-2 py-1 rounded-full",
-                          isSelected ? "bg-zinc-200 text-zinc-900" : "bg-zinc-900 text-zinc-200",
+                          isSelected ? "bg-emerald-200/20 text-emerald-100" : "bg-zinc-900 text-zinc-200",
                         ].join(" ")}
                       >
                         today
@@ -291,7 +283,7 @@ function CalendarView({
                   </div>
 
                   {dayEvents.length > 0 ? (
-                    <div className={["text-[11px]", isSelected ? "text-zinc-700" : "text-zinc-500"].join(" ")}>
+                    <div className={["text-[11px]", isSelected ? "text-emerald-200/80" : "text-zinc-500"].join(" ")}>
                       {dayEvents.length}
                     </div>
                   ) : null}
@@ -301,19 +293,13 @@ function CalendarView({
                 <div className="mt-2 flex items-center gap-1">
                   {deadlineEvents.length > 0 ? (
                     <span
-                      className={[
-                        "inline-flex items-center justify-center h-2 w-2 rounded-full",
-                        isSelected ? "bg-red-600" : "bg-red-700",
-                      ].join(" ")}
+                      className={["inline-flex items-center justify-center h-2 w-2 rounded-full", "bg-red-700"].join(" ")}
                       title={`마감 ${deadlineEvents.length}`}
                     />
                   ) : null}
                   {followupEvents.length > 0 ? (
                     <span
-                      className={[
-                        "inline-flex items-center justify-center h-2 w-2 rounded-full",
-                        isSelected ? "bg-sky-600" : "bg-sky-700",
-                      ].join(" ")}
+                      className={["inline-flex items-center justify-center h-2 w-2 rounded-full", "bg-sky-700"].join(" ")}
                       title={`팔로업 ${followupEvents.length}`}
                     />
                   ) : null}
@@ -323,6 +309,10 @@ function CalendarView({
                 <div className="mt-2 space-y-1">
                   {chips.map((ev) => {
                     const isPinned = pinnedSet.has(ev.app.id);
+
+                    // ✅ 모바일: 텍스트 최소화(회사명 제거)
+                    const label = ev.type === "DEADLINE" ? "마감" : "팔로업";
+
                     const tone =
                       ev.type === "DEADLINE"
                         ? isSelected
@@ -338,21 +328,22 @@ function CalendarView({
                         draggable
                         onDragStart={(e) => onDragStart(e, { type: ev.type, appId: ev.app.id })}
                         className={[
-                          "text-[11px] px-2 py-1 rounded-lg truncate",
+                          "text-[11px] px-2 py-1 rounded-lg",
                           "cursor-grab active:cursor-grabbing",
+                          "inline-flex items-center gap-1",
                           tone,
                         ].join(" ")}
                         title="드래그해서 날짜 이동"
                       >
-                        {isPinned ? "📌 " : ""}
-                        {ev.type === "DEADLINE" ? "마감" : "팔로업"} · {ev.app.company}
+                        {isPinned ? <span aria-hidden>📌</span> : null}
+                        <span className="truncate">{label}</span>
                       </div>
                     );
                   })}
 
                   {overflow > 0 ? (
-                    <div className={["text-[11px]", isSelected ? "text-zinc-700" : "text-zinc-500"].join(" ")}>
-                      +{overflow} 더보기
+                    <div className={["text-[11px]", isSelected ? "text-emerald-200/80" : "text-zinc-500"].join(" ")}>
+                      +{overflow}
                     </div>
                   ) : null}
                 </div>
@@ -373,7 +364,7 @@ function CalendarView({
 
       {/* Right: selected day list */}
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div>
             <div className="text-sm text-zinc-400">선택한 날짜</div>
             <div className="text-lg font-semibold">{selectedDateKey}</div>
@@ -391,10 +382,7 @@ function CalendarView({
               ➕ 추가
             </button>
 
-            <button
-              onClick={() => setSelectedDateKey(dateKeyLocal(new Date()))}
-              className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm"
-            >
+            <button onClick={() => setSelectedDateKey(dateKeyLocal(new Date()))} className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm">
               오늘로
             </button>
           </div>
@@ -515,4 +503,3 @@ export default function CalendarTab({ c }: { c: DashboardController }) {
     />
   );
 }
-
