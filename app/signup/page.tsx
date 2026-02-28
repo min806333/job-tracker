@@ -1,11 +1,9 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { createSupabaseBrowserClient } from "../../lib/supabase/browser";
 import { useRouter, useSearchParams } from "next/navigation";
 
 function SignupPageContent() {
-  const supabase = createSupabaseBrowserClient();
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawNext = searchParams?.get("next") ?? "";
@@ -45,29 +43,26 @@ function SignupPageContent() {
     }
 
     setLoading(true);
-    setDebug("Calling Supabase signUp...");
+    setDebug("Calling server signup...");
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: em,
-        password: pw,
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: em, password: pw }),
       });
 
-      if (error) {
-        setErrorMsg(error.message);
-        setDebug(`signUp failed: ${error.message}`);
-        return;
-      }
+      const json = await res.json().catch(() => null);
 
-      if (!data.session) {
-        setSuccessMsg("Sign-up complete. Please check your email to log in.");
-        setDebug("signUp succeeded: no session (email confirmation required).");
-        return;
-      }
+      if (!res.ok || !json?.ok) {
+        setErrorMsg(json?.message ?? `Sign-up failed (${res.status})`);
+  return;
+}
+router.push(`/login?next=${encodeURIComponent(nextPath)}`);
 
-      setSuccessMsg("Sign-up complete. Redirecting to dashboard...");
-      setDebug("signUp succeeded: session active, redirecting.");
-      router.push(nextPath);
+      setSuccessMsg("Sign-up complete. Please log in.");
+      setDebug("server signup succeeded. redirecting to login.");
+      router.push(`/login?next=${encodeURIComponent(nextPath)}`);
     } catch (err: any) {
       setErrorMsg(err?.message ?? "An unknown error occurred during sign-up.");
       setDebug(`Exception: ${err?.message ?? String(err)}`);
@@ -100,9 +95,7 @@ function SignupPageContent() {
             <h2 className="text-xl font-semibold">Create account</h2>
 
             {errorMsg ? <div className="mt-4 text-sm text-red-400">{errorMsg}</div> : null}
-
             {successMsg ? <div className="mt-4 text-sm text-emerald-300">{successMsg}</div> : null}
-
             {debug ? <div className="mt-3 text-xs text-zinc-400">Debug: {debug}</div> : null}
 
             <div className="mt-6 space-y-4">
