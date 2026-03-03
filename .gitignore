@@ -12,6 +12,9 @@
 
 # testing
 /coverage
+/playwright/.auth/
+/test-results/
+/playwright-report/
 
 # next.js
 /.next/
@@ -39,3 +42,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# capacitor / android (A 전략: WebView only)
+android/
+
+# local caches
+.npm-cache/
