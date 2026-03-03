@@ -30,7 +30,7 @@ export async function POST(req: Request) {
 
     const { data, error } = await supabase
       .from("profiles")
-      .select("stripe_customer_id")
+      .select("stripe_customer_id, is_admin")
       .eq("id", user.id)
       .single();
 

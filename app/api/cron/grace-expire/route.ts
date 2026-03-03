@@ -66,7 +66,7 @@ export async function POST(req: Request) {
     const nowIso = new Date().toISOString();
     const { data: rows, error: queryError } = await supabase
       .from("profiles")
-      .select("id")
+      .select("id, is_admin")
       .eq("plan", "grace")
       .not("grace_ends_at", "is", null)
       .lt("grace_ends_at", nowIso);

@@ -14,21 +14,22 @@ export default function SettingsPage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const [defaultView, setDefaultView] = useState<ViewMode>("TODAY");
   const [todayWindowDays, setTodayWindowDays] = useState<3 | 7>(3);
 
   const [toast, setToast] = useState<string | null>(null);
-  function pushToast(msg: string) {
-    setToast(msg);
-    window.setTimeout(() => setToast(null), 2400);
+  function pushToast(message: string) {
+    setToast(message);
+    window.setTimeout(() => setToast(null), 1800);
   }
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data: auth } = await supabase.auth.getUser();
-    const u = auth?.user;
-    if (!u) {
+    const user = auth?.user;
+    if (!user) {
       location.href = "/login";
       return;
     }
@@ -36,7 +37,7 @@ export default function SettingsPage() {
     const { data } = await supabase
       .from("profile_settings")
       .select("default_view_mode, today_window_days")
-      .eq("user_id", u.id)
+      .eq("user_id", user.id)
       .single();
 
     const settings = (data as ProfileSettingsRow | null) ?? null;
@@ -53,8 +54,8 @@ export default function SettingsPage() {
   async function save() {
     setSaving(true);
     const { data: auth } = await supabase.auth.getUser();
-    const u = auth?.user;
-    if (!u) {
+    const user = auth?.user;
+    if (!user) {
       setSaving(false);
       location.href = "/login";
       return;
@@ -64,7 +65,7 @@ export default function SettingsPage() {
       .from("profile_settings")
       .upsert(
         {
-          user_id: u.id,
+          user_id: user.id,
           default_view_mode: defaultView,
           today_window_days: todayWindowDays,
         },
@@ -72,45 +73,50 @@ export default function SettingsPage() {
       );
 
     setSaving(false);
+    if (error) {
+      pushToast(`저장 실패: ${error.message}`);
+      return;
+    }
 
-    if (error) return pushToast("저장 실패: " + error.message);
-    pushToast("저장됨 ✓");
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 1500);
+    pushToast("저장됨");
   }
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <div className="max-w-2xl mx-auto px-4 py-10">
+      <div className="mx-auto max-w-2xl px-4 py-10">
         <SubpageHeader title="설정" desc="대시보드 기본 동작을 설정합니다." />
 
         {loading ? (
           <div className="mt-6 text-sm text-zinc-500">불러오는 중...</div>
         ) : (
           <div className="mt-6 space-y-3">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+            <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
               <div className="text-sm font-medium text-zinc-100">기본 화면</div>
-              <div className="mt-2 text-sm text-zinc-400">로그인 후 처음 보여줄 탭</div>
+              <div className="mt-2 text-sm text-zinc-400">로그인 후 처음 보여줄 화면입니다.</div>
 
               <select
                 value={defaultView}
                 onChange={(e) => setDefaultView(e.target.value as ViewMode)}
                 className="mt-3 w-full rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-zinc-100 outline-none focus:ring-2 focus:ring-zinc-700"
               >
-                <option value="TODAY">Today</option>
-                <option value="CALENDAR">Calendar</option>
-                <option value="LIST">List</option>
-                <option value="REPORT">Report</option>
+                <option value="TODAY">오늘</option>
+                <option value="CALENDAR">캘린더</option>
+                <option value="LIST">목록</option>
+                <option value="REPORT">리포트</option>
               </select>
-            </div>
+            </section>
 
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
-              <div className="text-sm font-medium text-zinc-100">Today 범위</div>
-              <div className="mt-2 text-sm text-zinc-400">마감/팔로업을 몇 일 범위로 볼지</div>
+            <section className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+              <div className="text-sm font-medium text-zinc-100">오늘 범위</div>
+              <div className="mt-2 text-sm text-zinc-400">마감/팔로업을 몇 일 범위로 볼지 정합니다.</div>
 
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
                   onClick={() => setTodayWindowDays(3)}
-                  className={`rounded-xl border px-4 py-2 transition ${
+                  className={`rounded-xl border px-4 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
                     todayWindowDays === 3
                       ? "border-zinc-600 bg-zinc-900/40"
                       : "border-zinc-800 bg-zinc-950/60 hover:bg-zinc-900/30"
@@ -121,7 +127,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={() => setTodayWindowDays(7)}
-                  className={`rounded-xl border px-4 py-2 transition ${
+                  className={`rounded-xl border px-4 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
                     todayWindowDays === 7
                       ? "border-zinc-600 bg-zinc-900/40"
                       : "border-zinc-800 bg-zinc-950/60 hover:bg-zinc-900/30"
@@ -130,27 +136,26 @@ export default function SettingsPage() {
                   7일
                 </button>
               </div>
-            </div>
+            </section>
 
-            <div className="flex justify-end">
+            <div className="flex items-center justify-end gap-3">
+              {saved ? <span className="text-xs text-emerald-300">저장됨</span> : null}
               <button
                 type="button"
                 onClick={() => void save()}
                 disabled={saving}
-                className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-4 py-2 hover:bg-zinc-900/50 transition disabled:opacity-60"
+                className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-4 py-2 transition hover:bg-zinc-900/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-60"
               >
                 {saving ? "저장 중..." : "저장"}
               </button>
             </div>
 
-            <div className="text-xs text-zinc-500">
-              * 다음 단계: 이 설정을 대시보드 컨트롤러가 읽어서 실제 동작에 반영합니다.
-            </div>
+            <div className="text-xs text-zinc-500">설정을 바꾸면 다음 화면 진입부터 적용됩니다.</div>
           </div>
         )}
 
         {toast ? (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+          <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
             <div className="rounded-full border border-zinc-800 bg-zinc-950/90 px-4 py-2 text-sm text-zinc-100 shadow-lg">
               {toast}
             </div>

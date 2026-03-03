@@ -70,11 +70,11 @@ export default async function AdminSubscriptionsPage({
   const subscriptions = (subsData ?? []) as SubscriptionRow[];
 
   const userIds = Array.from(new Set(subscriptions.map((row) => row.user_id)));
-  let planByUser: Record<string, "free" | "pro" | "grace"> = {};
+  const planByUser: Record<string, "free" | "pro" | "grace"> = {};
   if (userIds.length > 0) {
     const { data: planRows } = await supabase
       .from("profiles")
-      .select("id, plan")
+      .select("id, plan, is_admin")
       .in("id", userIds);
 
     for (const row of planRows ?? []) {

@@ -1,4 +1,4 @@
-// lib/applications/types.ts
+﻿// lib/applications/types.ts
 
 export type Stage =
   | "SAVED"
@@ -15,7 +15,7 @@ export const STAGES: { value: Stage; label: string }[] = [
   { value: "SAVED", label: "저장" },
   { value: "APPLYING", label: "지원 준비" },
   { value: "APPLIED", label: "지원 완료" },
-  { value: "TEST", label: "과제/코테" },
+  { value: "TEST", label: "과제/테스트" },
   { value: "INTERVIEW", label: "면접" },
   { value: "OFFER", label: "오퍼" },
   { value: "REJECTED", label: "불합격" },

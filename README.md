@@ -41,3 +41,58 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 2. Insert 100 rows into `public.applications` for that user.
 3. Confirm the 101st insert fails with `PLAN_LIMIT`.
 4. Set the same user to `plan='pro'` and confirm inserts can exceed 100.
+
+## Android Release Build
+
+This project is wrapped with Capacitor and loads only the production Vercel URL via `server.url` in `capacitor.config.ts`.
+
+1. Create a keystore
+
+```powershell
+keytool -genkeypair -v -keystore job-tracker-upload-keystore.jks -alias jobtracker -keyalg RSA -keysize 2048 -validity 10000
+```
+
+2. Add signing config in `android/app/build.gradle`
+
+```gradle
+android {
+    ...
+    signingConfigs {
+        release {
+            storeFile file("job-tracker-upload-keystore.jks")
+            storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias "jobtracker"
+            keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+}
+```
+
+3. Build the release AAB
+
+```powershell
+cd android
+.\gradlew bundleRelease
+```
+
+4. Output AAB path
+
+```text
+android/app/build/outputs/bundle/release/app-release.aab
+```
+
+### Play Console Upload Checklist
+
+1. `applicationId` matches Play Console package (`com.minwoo.jobtracker`).
+2. AAB is signed with the correct upload key.
+3. `capacitor.config.ts` uses only HTTPS production URL in `server.url`.
+4. No cleartext HTTP settings were added (`cleartext: false`, no `usesCleartextTraffic=true`).
+5. Version code/version name are incremented before each upload.
+6. App name, icon, and basic startup behavior are verified on a real device.

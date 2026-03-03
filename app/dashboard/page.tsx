@@ -7,6 +7,10 @@ type SearchParams = {
   limit?: string;
 };
 
+function isConservativeSampleApplication(app: { company: string | null; role: string | null }) {
+  return (app.company ?? "").includes("(샘플)") || (app.role ?? "").includes("(샘플)");
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -29,6 +33,8 @@ export default async function DashboardPage({
     .select("id, user_id, company, role, url, stage, deadline_at, created_at, position, next_action, followup_at, source", {
       count: "exact",
     })
+    .not("company", "ilike", "%(샘플)%")
+    .not("role", "ilike", "%(샘플)%")
     .order("created_at", { ascending: false })
     .range(from, to);
 
@@ -38,19 +44,26 @@ export default async function DashboardPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("grace_ends_at")
+    // TODO: if schema uses `grace_end_at`, migrate and align this selector.
+    .select("plan, grace_ends_at, is_admin")
     .eq("id", userData.user.id)
     .single();
+
+  const filteredApps = (error ? [] : apps ?? []).filter((app) => !isConservativeSampleApplication(app));
 
   return (
     <DashboardClient
       userEmail={userData.user.email ?? ""}
       userId={userData.user.id}
-      initialApplications={error ? [] : apps ?? []}
+      initialApplications={filteredApps}
       page={page}
       limit={limit}
-      totalCount={error ? 0 : count ?? 0}
+      totalCount={error ? 0 : Math.max(0, count ?? filteredApps.length)}
       initialGraceEndsAt={profile?.grace_ends_at ?? null}
+      initialPlan={
+        profile?.plan === "pro" ? "pro" : profile?.plan === "grace" ? "grace" : "free"
+      }
+      initialIsAdmin={profile?.is_admin === true}
     />
   );
 }

@@ -8,6 +8,14 @@ import {
   CATEGORY_LABEL,
   type HelpCategory,
 } from "@/lib/help/articles";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+
+type SupportTicket = {
+  id: string;
+  subject: string;
+  status: "open" | "in_progress" | "closed" | string;
+  created_at: string;
+};
 
 function Icon({ cat }: { cat: HelpCategory }) {
   const map: Record<HelpCategory, string> = {
@@ -105,6 +113,7 @@ function AccordionItem({
 
 function SupportPageContent() {
   const sp = useSearchParams();
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   const articles = getArticles();
   const categories = Object.keys(CATEGORY_LABEL) as HelpCategory[];
@@ -114,16 +123,62 @@ function SupportPageContent() {
   const cat: HelpCategory | undefined = categories.includes(catRaw as HelpCategory)
     ? (catRaw as HelpCategory)
     : undefined;
+  const showCreatedMessage = sp.get("created") === "1";
 
   // ✅ 검색은 실시간 state로
   const initialQ = sp.get("q")?.trim() ?? "";
   const [search, setSearch] = useState(initialQ);
   const [debouncedQ, setDebouncedQ] = useState(initialQ);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [ticketsLoading, setTicketsLoading] = useState(true);
+  const [ticketsError, setTicketsError] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(search), 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadMyTickets() {
+      setTicketsLoading(true);
+      setTicketsError(null);
+
+      const { data: userData } = await supabase.auth.getUser();
+      if (!mounted) return;
+
+      if (!userData.user) {
+        setTickets([]);
+        setTicketsLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("support_tickets")
+        .select("id, subject, status, created_at")
+        .eq("user_id", userData.user.id)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (!mounted) return;
+
+      if (error) {
+        setTickets([]);
+        setTicketsError("내 문의를 불러오지 못했어요.");
+      } else {
+        setTickets((data ?? []) as SupportTicket[]);
+      }
+
+      setTicketsLoading(false);
+    }
+
+    void loadMyTickets();
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
 
   const q = debouncedQ.trim().toLowerCase();
 
@@ -151,11 +206,22 @@ function SupportPageContent() {
     }, {} as Record<HelpCategory, number>);
   }, [articles]);
 
-  // 🔎 필터 표시용 (디바운스 전 입력값도 보여주려면 search 사용)
   const showFilterBar = Boolean(cat || search.trim());
+
+  function ticketStatusLabel(status: SupportTicket["status"]) {
+    if (status === "closed") return "해결 완료";
+    if (status === "in_progress") return "확인 중";
+    return "접수됨";
+  }
 
   return (
     <div className="space-y-6">
+      {showCreatedMessage ? (
+        <div className="rounded-2xl border border-emerald-900/50 bg-emerald-950/20 px-4 py-3 text-sm text-emerald-200">
+          문의가 정상적으로 접수되었어요.
+        </div>
+      ) : null}
+
       {/* Top nav */}
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-3">
         <Link
@@ -170,10 +236,21 @@ function SupportPageContent() {
 
       {/* Header */}
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
-        <h1 className="text-lg font-semibold text-zinc-100">고객센터</h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          자주 묻는 질문을 먼저 확인하고, 해결이 안 되면 문의로 이어가세요.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-lg font-semibold text-zinc-100">고객센터</h1>
+            <p className="mt-1 text-sm text-zinc-400">
+              자주 묻는 질문을 먼저 확인하고, 해결이 안 되면 문의로 이어가세요.
+            </p>
+          </div>
+
+          <Link
+            href="/dashboard/support/new"
+            className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
+          >
+            새 문의
+          </Link>
+        </div>
 
         {/* Search (실시간) */}
         <div className="mt-4">
@@ -212,6 +289,54 @@ function SupportPageContent() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-zinc-200">내 문의</h2>
+          <Link
+            href="/dashboard/support/new"
+            className="text-xs text-emerald-300 hover:text-emerald-200"
+          >
+            문의 작성
+          </Link>
+        </div>
+
+        {ticketsLoading ? (
+          <div className="mt-4 text-sm text-zinc-500">불러오는 중...</div>
+        ) : ticketsError ? (
+          <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-red-300">
+            {ticketsError}
+          </div>
+        ) : tickets.length === 0 ? (
+          <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-6 text-sm text-zinc-400">
+            아직 작성한 문의가 없어요. 새 문의를 남겨보세요.
+          </div>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {tickets.map((ticket) => (
+              <Link
+                key={ticket.id}
+                href={`/dashboard/support/${ticket.id}`}
+                className="block rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 transition hover:bg-zinc-950/60"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-zinc-100">
+                      {ticket.subject}
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-500">
+                      {new Date(ticket.created_at).toLocaleString("ko-KR")}
+                    </div>
+                  </div>
+                  <div className="shrink-0 rounded-full border border-zinc-700 bg-zinc-900/80 px-2 py-1 text-xs text-zinc-300">
+                    {ticketStatusLabel(ticket.status)}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Top: Frequently asked */}
@@ -260,8 +385,8 @@ function SupportPageContent() {
 
         <div className="mt-4">
           <Link
-            href="/dashboard/support?compose=1"
-            className="inline-flex w-full items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-950/60 transition"
+            href="/dashboard/support/new"
+            className="inline-flex w-full items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-200 transition hover:bg-zinc-950/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
           >
             문의하기
           </Link>
@@ -304,7 +429,7 @@ function SupportPageContent() {
 
 export default function SupportPage() {
   return (
-    <Suspense fallback={<div className="text-sm text-zinc-500">Loading support...</div>}>
+    <Suspense fallback={<div className="text-sm text-zinc-500">도움말을 불러오는 중...</div>}>
       <SupportPageContent />
     </Suspense>
   );

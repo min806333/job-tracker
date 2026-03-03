@@ -33,7 +33,7 @@ export function CollapsibleSection<T>({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-semibold">{title}</h2>
-              <span className="text-sm text-zinc-400">{items.length}개</span>
+              <span className="text-sm text-zinc-400">{items.length}건</span>
             </div>
             {subtitle ? <div className="mt-1 text-sm text-zinc-500">{subtitle}</div> : null}
           </div>
@@ -72,7 +72,7 @@ export function CollapsibleSection<T>({
                   onClick={() => setShowAll(true)}
                   className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm"
                 >
-                  + 더보기 ({items.length - defaultVisibleCount}개)
+                  + 더보기 ({items.length - defaultVisibleCount}건)
                 </button>
               </div>
             ) : null}

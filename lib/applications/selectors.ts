@@ -1,9 +1,9 @@
-// lib/applications/selectors.ts
+﻿// lib/applications/selectors.ts
 import { Application, CalendarEventType, Stage, STAGES } from "./types";
 
-// ===== UI label helpers =====
+// UI label helpers
 export function stageLabel(stage: Stage) {
-  return STAGES.find((s) => s.value === stage)?.label ?? stage;
+  return STAGES.find((s) => s.value === stage)?.label ?? "진행 중";
 }
 
 export function stageBadgeClass(stage: Stage) {
@@ -32,12 +32,10 @@ export function stageBadgeClass(stage: Stage) {
 }
 
 export function eventBadgeClass(type: CalendarEventType) {
-  return type === "DEADLINE"
-    ? "bg-red-900/60 text-red-200"
-    : "bg-sky-900/60 text-sky-200";
+  return type === "DEADLINE" ? "bg-red-900/60 text-red-200" : "bg-sky-900/60 text-sky-200";
 }
 
-// ===== Date helpers =====
+// Date helpers
 export function dateInputToISOEndOfDay(dateStr: string) {
   const d = new Date(`${dateStr}T23:59:59`);
   return d.toISOString();
@@ -81,7 +79,7 @@ export function formatDateOnly(iso: string | null) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// D-day 계산(로컬 날짜 기준, 시간 무시)
+// D-day helper
 export function calcDDay(deadlineISO: string) {
   const deadline = new Date(deadlineISO);
   const now = new Date();
@@ -95,15 +93,14 @@ export function calcDDay(deadlineISO: string) {
 }
 
 export function ddayBadge(diffDays: number) {
-  if (diffDays < 0)
-    return { text: `D+${Math.abs(diffDays)}`, cls: "bg-zinc-700 text-zinc-100" };
+  if (diffDays < 0) return { text: `D+${Math.abs(diffDays)}`, cls: "bg-zinc-700 text-zinc-100" };
   if (diffDays === 0) return { text: "D-day", cls: "bg-red-700 text-white" };
   if (diffDays <= 3) return { text: `D-${diffDays}`, cls: "bg-red-900/70 text-red-200" };
   if (diffDays <= 7) return { text: `D-${diffDays}`, cls: "bg-amber-900/70 text-amber-200" };
   return { text: `D-${diffDays}`, cls: "bg-zinc-800 text-zinc-100" };
 }
 
-// ===== Today filtering helpers =====
+// Today filtering helpers
 export const EXCLUDED_TODAY_STAGES: Stage[] = ["REJECTED", "WITHDRAWN", "ARCHIVED"];
 export function isActiveStage(stage: Stage) {
   return !EXCLUDED_TODAY_STAGES.includes(stage);
@@ -125,7 +122,7 @@ export function isWithinNextDays(iso: string | null, days: number) {
 
 export function startOfWeekMonday(d: Date) {
   const x = new Date(d);
-  const day = x.getDay(); // 0=Sun
+  const day = x.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   x.setDate(x.getDate() + diff);
   x.setHours(0, 0, 0, 0);
@@ -153,7 +150,7 @@ export function safeHttpUrl(url: string | null) {
   return u;
 }
 
-// ===== LocalStorage safe helpers =====
+// LocalStorage safe helpers
 export function uid() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `t_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -166,6 +163,7 @@ export function safeLSGet(key: string) {
     return null;
   }
 }
+
 export function safeLSSet(key: string, value: string) {
   try {
     localStorage.setItem(key, value);
@@ -173,6 +171,7 @@ export function safeLSSet(key: string, value: string) {
     // ignore
   }
 }
+
 export function safeLSRemove(key: string) {
   try {
     localStorage.removeItem(key);
@@ -190,7 +189,6 @@ export function safeJsonParse<T>(value: string | null, fallback: T): T {
   }
 }
 
-// 작은 공용(필요하면 계속 추가)
 export function nextPositionForStage(apps: Application[], stage: Stage) {
   return Math.max(0, ...apps.filter((a) => a.stage === stage).map((a) => a.position ?? 0)) + 1;
 }

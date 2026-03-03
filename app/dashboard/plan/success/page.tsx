@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { track } from "@/lib/analytics/track";
 
 type Plan = "free" | "pro" | "grace";
 type Status = "processing" | "success" | "timeout" | "error";
@@ -152,6 +153,12 @@ export default function PlanSuccessPage() {
         throw new Error(msg ?? (text.trim() || "결제 관리로 이동할 수 없습니다."));
       }
 
+      void track("paywall_cta_clicked", {
+        reason: "checkout_timeout_portal",
+        cta: "billing_portal",
+        plan: plan ?? "unknown",
+      });
+      void track("billing_portal_opened", {});
       window.location.href = url;
     } catch {
       router.push("/dashboard/plan");
@@ -210,6 +217,16 @@ export default function PlanSuccessPage() {
       stopRedirectInterval();
     };
   }, [goToDashboard, hasSession, plan]);
+
+  useEffect(() => {
+    if (status !== "success" || plan !== "pro") return;
+    const key = "evt_checkout_completed";
+    try {
+      if (sessionStorage.getItem(key) === "1") return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+    void track("checkout_completed", {});
+  }, [plan, status]);
 
   // ✅ 직접 접근 시 안내 화면
   if (hasSession === false) {

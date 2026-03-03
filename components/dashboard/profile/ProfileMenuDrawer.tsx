@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -29,7 +29,13 @@ function MenuItem({
   );
 }
 
-export default function ProfileMenuDrawer({ c }: { c: DashboardController }) {
+export default function ProfileMenuDrawer({
+  c,
+  isAdmin,
+}: {
+  c: DashboardController;
+  isAdmin: boolean;
+}) {
   const router = useRouter();
 
   const planLabel = useMemo(() => {
@@ -65,7 +71,7 @@ export default function ProfileMenuDrawer({ c }: { c: DashboardController }) {
               </div>
 
               <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950 px-3 py-1">
-                <span className="text-xs text-zinc-400">Plan</span>
+                <span className="text-xs text-zinc-400">요금제</span>
                 <span
                   className={`text-xs font-semibold ${
                     planLabel === "PRO" ? "text-emerald-400" : "text-zinc-100"
@@ -82,6 +88,9 @@ export default function ProfileMenuDrawer({ c }: { c: DashboardController }) {
             <div className="mt-4 space-y-3">
               <MenuItem title="계정 상세 정보" desc="프로필/보안(추후)" onClick={() => go("/dashboard/account")} />
               <MenuItem title="설정" desc="알림/테마/단축키(추후)" onClick={() => go("/dashboard/settings")} />
+              {isAdmin ? (
+                <MenuItem title="관리자 콘솔" desc="문의/구독 관리" onClick={() => go("/admin")} />
+              ) : null}
               <MenuItem title="내 플랜" desc={`현재: ${planLabel}`} onClick={() => go("/dashboard/plan")} />
               <MenuItem title="도움말" desc="가이드/FAQ" onClick={() => go("/dashboard/help")} />
               <MenuItem title="고객센터" desc="문의/피드백" onClick={() => go("/dashboard/support")} />

@@ -1,6 +1,7 @@
 import React from "react";
 
 import type { ActivityLog } from "../../../lib/applications/types";
+import { sanitizePossiblyCorruptedText } from "../../../lib/text/sanitize";
 import { Drawer } from "./Drawer";
 
 // ===== Updates Drawer (최근 업데이트 로그) =====
@@ -55,26 +56,34 @@ export function UpdatesDrawer({
         {logs.length === 0 ? (
           <div className="text-sm text-zinc-500">아직 기록이 없어요.</div>
         ) : (
-          logs.slice(0, 60).map((l) => (
-            <div key={l.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-4">
-              <div className="flex items-start justify-between gap-3">
+          logs.slice(0, 60).map((l) => {
+            const safeMessage = sanitizePossiblyCorruptedText(
+              l.message,
+              "제목을 불러올 수 없어요. 로그를 비운 뒤 다시 시도해 주세요."
+            );
+            const appId = l.appId;
+
+            return (
+              <div key={l.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-4">
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                  <div className="text-xs text-zinc-500">
-                    {new Date(l.ts).toLocaleString()} · {l.type}
+                    <div className="text-xs text-zinc-500">
+                      {new Date(l.ts).toLocaleString()} · {l.type}
+                    </div>
+                    <div className="mt-1 text-sm text-zinc-200 leading-relaxed">{safeMessage}</div>
                   </div>
-                  <div className="mt-1 text-sm text-zinc-200 leading-relaxed">{l.message}</div>
+                  {appId ? (
+                    <button
+                      onClick={() => onOpenDetails(appId)}
+                      className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm shrink-0"
+                    >
+                      열기
+                    </button>
+                  ) : null}
                 </div>
-                {l.appId ? (
-                  <button
-                    onClick={() => onOpenDetails(l.appId!)}
-                    className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm shrink-0"
-                  >
-                    열기
-                  </button>
-                ) : null}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </Drawer>

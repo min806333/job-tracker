@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/browser";
@@ -42,11 +42,15 @@ import {
   uid,
 } from "../../../lib/applications/selectors";
 import { priorityScore } from "../../../lib/applications/scoring";
+import {
+  sanitizePossiblyCorruptedText,
+  sanitizeTextForClipboard,
+} from "../../../lib/text/sanitize";
 
 import type { Toast } from "../common/ToastViewport";
 import type { TutorialStep } from "../common/TutorialOverlay";
 
-/** ===== SaaS Plan / Entitlements (MVP) ===== */
+/** ===== SaaS 플랜 / 권한(Entitlements) ===== */
 export type Plan = "free" | "pro" | "grace";
 type Entitlements = {
   plan: Plan;
@@ -64,21 +68,46 @@ export type UseDashboardControllerProps = {
   initialApplications: Application[];
 };
 
-export function useDashboardController({ userId, userEmail, initialApplications }: UseDashboardControllerProps) {
+type TodayData = {
+  dueSoon: Application[];
+  followupSoon: Application[];
+  actionOnly: Application[];
+  counts: {
+    dueSoon: number;
+    followupSoon: number;
+    actionOnly: number;
+    total: number;
+  };
+};
+
+export function useDashboardController({
+  userId,
+  userEmail,
+  initialApplications,
+}: UseDashboardControllerProps) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const isConservativeSample = (app: Pick<Application, "company" | "role" | "source">) => {
+    const hasSampleMarker = (app.company ?? "").includes("(샘플)") || (app.role ?? "").includes("(샘플)");
+    const isSampleSource = (app.source ?? "").trim().toLowerCase() === "sample";
+    return hasSampleMarker || isSampleSource;
+  };
+  const sanitizedInitialApplications = useMemo(
+    () => (initialApplications ?? []).filter((app) => !isConservativeSample(app)),
+    [initialApplications]
+  );
 
   // ===== Profile menu drawer =====
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
-  // ===== SaaS plan state =====
+  // ===== SaaS 플랜 상태 =====
   const [plan, setPlan] = useState<Plan>("free");
   const [entitlements, setEntitlements] = useState<Entitlements>({
     plan: "free",
-    maxApplications: 100, // ✅ FREE: Applications 최대 100
-    maxFocusPins: 3, // (유지해도 됨. 단, FREE에서 핀 제한은 걸지 않음)
+    maxApplications: 100, // Free: 지원 항목 최대 100개
+    maxFocusPins: 3, // Free에서도 핀 자체는 허용(표시 수만 제한)
     canUseReports: false,
     canCalendarDrag: false,
-    canExport: false, // ✅ FREE: CSV Export 제한
+    canExport: false, // Free: CSV 내보내기 제한
   });
   const [planLoading, setPlanLoading] = useState(false);
 
@@ -111,13 +140,13 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     setSettingsLoaded(true);
   }
 
-  // ✅ userId 들어오면 1회 로드
+  // userId가 들어오면 1회 로드
   useEffect(() => {
     void loadUserSettingsOnce();
   }, [userId]);
 
   // ===== Core state =====
-  const [apps, setApps] = useState(() => initialApplications ?? []);
+  const [apps, setApps] = useState(() => sanitizedInitialApplications);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [busyBatch, setBusyBatch] = useState(false);
 
@@ -128,7 +157,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // ===== Updates drawer (Paywall도 여기로 재활용) =====
+  // ===== 업데이트 드로어 (Paywall UI 재사용) =====
   const [updatesOpen, setUpdatesOpen] = useState(false);
 
   const [paywallOpen, setPaywallOpen] = useState(false);
@@ -140,7 +169,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
   }
 
   function guard(feature: FeatureKey): boolean {
-    // 로딩 중에는 막지 않고(UX), 서버/DB에서 최종 검증
+    // 로딩 중에는 차단하지 않고(UX), 서버/DB에서 최종 검증
     if (planLoading) return true;
 
     if (feature === "reports" && !entitlements.canUseReports) {
@@ -152,18 +181,18 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       return false;
     }
     if (feature === "export" && !entitlements.canExport) {
-      openPaywall("내보내기(Export)는 Pro에서 사용할 수 있어요.");
+      openPaywall("내보내기 기능은 Pro에서 사용할 수 있어요.");
       return false;
     }
     if (feature === "focus_pin") {
-      // ✅ 진실: FREE에서 핀 자체는 막지 않음.
-      // 제한은 TodayTab에서 "표시 개수(1 vs 3)"로만 처리한다.
+      // Free에서 핀 자체는 제한하지 않는다.
+      // 표시 개수 제한(1 vs 3)만 TodayTab에서 처리한다.
       return true;
     }
     if (feature === "create_application") {
       const limit = entitlements.maxApplications ?? 80;
       if (apps.length >= limit) {
-        openPaywall(`지원 항목은 최대 ${limit}개까지 저장할 수 있어요. (Pro로 확장 가능)`);
+        openPaywall(`지원 항목은 최대 ${limit}개까지 저장할 수 있어요. Pro로 업그레이드하면 확장됩니다.`);
         return false;
       }
       return true;
@@ -172,12 +201,12 @@ export function useDashboardController({ userId, userEmail, initialApplications 
   }
 
   function isPlanLimitErrorMessage(msg: string) {
-    // DB trigger에서 raise exception 'PLAN_LIMIT: ...' 형태로 던짐
+    // DB trigger에서 'PLAN_LIMIT: ...' 형태로 반환
     return typeof msg === "string" && msg.includes("PLAN_LIMIT");
   }
 
   function planLimitFriendlyMessage(msg: string) {
-    // 메시지 표준화(UX)
+    // 메시지 표준화
     if (!isPlanLimitErrorMessage(msg)) return msg;
     // 예: 'PLAN_LIMIT: applications max (80) exceeded'
     const m = msg.match(/\((\d+)\)/);
@@ -194,7 +223,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       // 1) profiles에서 plan 조회
       const { data: prof, error: profErr } = await supabase
         .from("profiles")
-        .select("plan, plan_status")
+        .select("plan, plan_status, is_admin")
         .eq("id", userId)
         .single();
 
@@ -282,13 +311,13 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     setSelectedIds([]);
   }
 
-  // ===== POSITION drag reorder (강화: stage 필터일 때만 허용) =====
+  // ===== POSITION drag reorder (stage 필터일 때만 허용) =====
   const dragEnabled = sortMode === "POSITION" && filter !== "ALL" && filter !== "DUE_SOON";
   const stageFilterForDrag = dragEnabled ? (filter as Stage) : null;
   const [positionOrderIds, setPositionOrderIds] = useState<string[]>([]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
-  // ===== Quick Add (B안) =====
+  // ===== Quick Add =====
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickCompany, setQuickCompany] = useState("");
   const [quickRole, setQuickRole] = useState("");
@@ -333,10 +362,10 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     setUndoStack((prev) => prev.filter((a) => a.id !== action.id));
     try {
       await action.undo();
-      pushToast({ tone: "success", message: "되돌렸어요 ✓" });
-      pushLog("UNDO", `Undo: ${action.label}`);
+      pushToast({ tone: "success", message: "되돌렸어요." });
+      pushLog("UNDO", `되돌리기: ${action.label}`);
     } catch (e: any) {
-      pushToast({ tone: "error", message: "Undo 실패: " + (e?.message ?? "unknown") });
+      pushToast({ tone: "error", message: "되돌리기 실패: " + (e?.message ?? "unknown") });
     }
   }
 
@@ -355,7 +384,8 @@ export function useDashboardController({ userId, userEmail, initialApplications 
   }
 
   function pushLog(type: ActivityType, message: string, appId?: string) {
-    const entry: ActivityLog = { id: uid(), ts: new Date().toISOString(), type, message, appId };
+    const safeMessage = sanitizePossiblyCorruptedText(message, "제목을 불러올 수 없어요");
+    const entry: ActivityLog = { id: uid(), ts: new Date().toISOString(), type, message: safeMessage, appId };
     setLogs((prev) => {
       const next = [entry, ...prev].slice(0, 120);
       persistLogs(next);
@@ -366,7 +396,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
   function clearLogs() {
     setLogs([]);
     safeLSRemove(LS.activityLogs);
-    pushToast({ tone: "success", message: "업데이트 로그를 비웠어요 ✓" });
+    pushToast({ tone: "success", message: "업데이트 로그를 비웠어요." });
   }
 
   async function copyLogs() {
@@ -375,10 +405,10 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       .map((l) => `${new Date(l.ts).toLocaleString()} [${l.type}] ${l.message}`)
       .join("\n");
     try {
-      await navigator.clipboard.writeText(text || "(empty)");
-      pushToast({ tone: "success", message: "로그 복사됨 ✓" });
+      await navigator.clipboard.writeText(sanitizeTextForClipboard(text, "(empty)"));
+      pushToast({ tone: "success", message: "업데이트 로그를 복사했어요." });
     } catch {
-      pushToast({ tone: "error", message: "복사 실패 (브라우저 권한을 확인해주세요)" });
+      pushToast({ tone: "error", message: "복사에 실패했어요. 브라우저 권한을 확인해 주세요." });
     }
   }
 
@@ -394,15 +424,15 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       if (exists) {
         const next = prev.filter((x) => x !== id);
         persistPins(next);
-        pushToast({ tone: "success", message: "Focus 핀 해제 ✓" });
+        pushToast({ tone: "success", message: "Focus 핀을 해제했어요." });
         pushLog("PIN", "Focus 핀 해제", id);
         return next;
       }
 
-      // ✅ 진실: 핀 자체는 막지 않음 (표시 제한은 TodayTab에서 1 vs 3)
+      // 핀 자체 제한은 없고 TodayTab에서 표시 수만 제한한다.
       const next = [id, ...prev];
       persistPins(next);
-      pushToast({ tone: "success", message: "Focus에 핀했어요 📌" });
+      pushToast({ tone: "success", message: "Focus에 핀했어요." });
       pushLog("PIN", "Focus 핀 추가", id);
       return next;
     });
@@ -453,7 +483,19 @@ export function useDashboardController({ userId, userEmail, initialApplications 
 
     // logs
     const loadedLogs = safeJsonParse<ActivityLog[]>(safeLSGet(LS.activityLogs), []);
-    setLogs(Array.isArray(loadedLogs) ? loadedLogs : []);
+    const normalizedLogs = Array.isArray(loadedLogs)
+      ? loadedLogs.map((log) => ({
+          ...log,
+          message: sanitizePossiblyCorruptedText(log.message ?? "", "제목을 불러올 수 없어요"),
+        }))
+      : [];
+    setLogs(normalizedLogs);
+
+    // 개발 중 깨진 로컬 로그를 강제로 초기화하려면 아래를 일시적으로 활성화하세요.
+    // if (process.env.NODE_ENV === "development" && safeLSGet("jt_dev_reset_logs") === "1") {
+    //   safeLSRemove(LS.activityLogs);
+    //   setLogs([]);
+    // }
 
     // tutorial
     const tutorialDone = safeLSGet(LS.tutorialDone) === "1";
@@ -497,14 +539,14 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       }
       if (isTyping) return;
 
-      // ✅ Undo: Ctrl/Cmd + Z (입력 중이면 브라우저 기본 undo 사용)
+      // Ctrl/Cmd + Z: 되돌리기
       if (e.key.toLowerCase() === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
         void undoLast();
         return;
       }
 
-      // N: Today 빠른추가
+      // N: Today 빠른 추가
       if (e.key.toLowerCase() === "n") {
         e.preventDefault();
         if (viewMode !== "TODAY") setViewMode("TODAY");
@@ -580,7 +622,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     setBusyId(null);
 
     if (opts?.toast !== false) {
-      pushToast({ tone: "success", message: opts?.toastMsg ?? "저장됨 ✓" });
+      pushToast({ tone: "success", message: opts?.toastMsg ?? "저장됨" });
     }
     if (opts?.log) {
       pushLog(opts.logType ?? "UPDATE", opts.logMsg ?? "항목 수정", id);
@@ -593,7 +635,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     await updateApplicationFields(
       id,
       { next_action: null, followup_at: null },
-      { toast: true, toastMsg: "완료 처리 ✓", log: true, logType: "UPDATE", logMsg: "완료 처리(next/followup 비움)" }
+      { toast: true, toastMsg: "완료 처리됨", log: true, logType: "UPDATE", logMsg: "완료 처리(next/followup 비움)" }
     );
   }
 
@@ -601,7 +643,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     await updateApplicationFields(
       id,
       { followup_at: null },
-      { toast: true, toastMsg: "팔로업 완료 ✓", log: true, logType: "UPDATE", logMsg: "팔로업 완료(followup만 비움)" }
+      { toast: true, toastMsg: "팔로업 완료됨", log: true, logType: "UPDATE", logMsg: "팔로업 완료(followup만 비움)" }
     );
   }
 
@@ -622,7 +664,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     await updateApplicationFields(
       id,
       { stage: nextStage, position: nextPos },
-      { toast: true, toastMsg: "단계 변경 ✓", log: true, logType: "STAGE", logMsg: `단계 변경 → ${stageLabel(nextStage)}` }
+      { toast: true, toastMsg: "단계 변경됨", log: true, logType: "STAGE", logMsg: `단계 변경: ${stageLabel(nextStage)}` }
     );
   }
 
@@ -632,12 +674,12 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     await updateApplicationFields(
       id,
       { stage: nextStage, position: nextPos, deadline_at: null },
-      { toast: true, toastMsg: "지원 완료 처리 ✓", log: true, logType: "STAGE", logMsg: "지원 완료(APPLIED) + 마감 제거" }
+      { toast: true, toastMsg: "지원 완료 처리됨", log: true, logType: "STAGE", logMsg: "지원 완료(APPLIED) + 마감 제거" }
     );
   }
 
   async function moveEventDate(appId: string, type: CalendarEventType, targetDateKey: string) {
-    // ✅ Pro 기능: 캘린더 드래그 이동
+    // Pro 기능: 캘린더 드래그 이동
     if (!guard("calendar_drag")) return;
 
     if (type === "DEADLINE") {
@@ -645,14 +687,14 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       await updateApplicationFields(
         appId,
         { deadline_at: iso },
-        { toast: true, toastMsg: "마감일 이동 ✓", log: true, logType: "MOVE_DATE", logMsg: `마감일 이동 → ${targetDateKey}` }
+        { toast: true, toastMsg: "마감일 이동됨", log: true, logType: "MOVE_DATE", logMsg: `마감일 이동: ${targetDateKey}` }
       );
     } else {
       const iso = dateKeyToISOMorning(targetDateKey, 9, 0);
       await updateApplicationFields(
         appId,
         { followup_at: iso },
-        { toast: true, toastMsg: "팔로업 이동 ✓", log: true, logType: "MOVE_DATE", logMsg: `팔로업 이동 → ${targetDateKey}` }
+        { toast: true, toastMsg: "팔로업 이동됨", log: true, logType: "MOVE_DATE", logMsg: `팔로업 이동: ${targetDateKey}` }
       );
     }
   }
@@ -688,15 +730,15 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       tone: "default",
       message: "삭제됨 (5초 안에 되돌릴 수 있어요)",
       action: {
-        label: "Undo",
+        label: "되돌리기",
         onClick: () => {
           const pending = pendingDeleteRef.current[id];
           if (!pending) return;
           window.clearTimeout(pending.timer);
           delete pendingDeleteRef.current[id];
           setApps((prev) => [pending.app, ...prev]);
-          pushToast({ tone: "success", message: "되돌렸어요 ✓" });
-          pushLog("UNDO_DELETE", `삭제 Undo: ${pending.app.company} / ${pending.app.role}`, id);
+          pushToast({ tone: "success", message: "되돌렸어요." });
+          pushLog("UNDO_DELETE", `삭제 되돌리기: ${pending.app.company} / ${pending.app.role}`, id);
         },
       },
       durationMs: 5200,
@@ -713,14 +755,14 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     nextAction?: string;
     source?: string;
   }) {
-    // ✅ 사전 UX 가드(서버에서 최종으로 막히지만, 사용자는 먼저 안내받는 게 좋음)
+    // 사전 UX 가드(서버에서 최종 검증)
     if (!guard("create_application")) return null;
 
     const c = payload.company.trim();
     const r = payload.role.trim();
 
     if (!c || !r) {
-      pushToast({ tone: "error", message: "회사/직무는 필수입니다." });
+      pushToast({ tone: "error", message: "회사/직무는 필수 입력이에요." });
       return null;
     }
 
@@ -764,7 +806,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     }
 
     setApps((prev) => [data as Application, ...prev]);
-    pushToast({ tone: "success", message: "추가 완료! ✓" });
+    pushToast({ tone: "success", message: "추가 완료!" });
     pushLog("CREATE", `추가: ${c} / ${r}`, (data as Application).id);
 
     return data as Application;
@@ -806,66 +848,6 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       setNextAction("");
       setSource("");
     }
-  }
-
-  function daysFromNowISO(n: number) {
-    return new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
-  }
-
-  async function addSampleData() {
-    // 샘플도 제한 걸리도록 동일 가드
-    if (!guard("create_application")) return;
-
-    const samples = [
-      {
-        user_id: userId,
-        company: "(샘플) A사",
-        role: "Frontend Engineer",
-        url: "https://example.com/job/1",
-        stage: "APPLYING" as Stage,
-        deadline_at: daysFromNowISO(2),
-        position: nextPositionForStage(apps, "APPLYING"),
-        next_action: "이력서 최신화 + 포트폴리오 링크 점검",
-        followup_at: daysFromNowISO(1),
-        source: "sample",
-      },
-      {
-        user_id: userId,
-        company: "(샘플) B사",
-        role: "Backend Engineer",
-        url: "https://example.com/job/2",
-        stage: "INTERVIEW" as Stage,
-        deadline_at: daysFromNowISO(5),
-        position: nextPositionForStage(apps, "INTERVIEW"),
-        next_action: "면접 질문 10개 준비",
-        followup_at: null,
-        source: "sample",
-      },
-      {
-        user_id: userId,
-        company: "(샘플) C사",
-        role: "Product Designer",
-        url: "https://example.com/job/3",
-        stage: "SAVED" as Stage,
-        deadline_at: null,
-        position: nextPositionForStage(apps, "SAVED"),
-        next_action: "JD 분석 후 포트폴리오 매칭",
-        followup_at: daysFromNowISO(3),
-        source: "sample",
-      },
-    ];
-
-    const { data, error } = await supabase.from("applications").insert(samples).select("*");
-    if (error) {
-      const msg = planLimitFriendlyMessage(error.message);
-      pushToast({ tone: "error", message: "샘플 추가 실패: " + msg });
-      if (isPlanLimitErrorMessage(error.message)) openPaywall(msg);
-      return;
-    }
-
-    setApps((prev) => [...(data as Application[]), ...prev]);
-    pushToast({ tone: "success", message: "샘플 데이터 추가 완료 ✓" });
-    pushLog("CREATE", "샘플 데이터 추가");
   }
 
   async function signOut() {
@@ -981,8 +963,8 @@ export function useDashboardController({ userId, userEmail, initialApplications 
           source: sourceValue,
         },
         {
-          toast: false, // autosave는 토스트 남발 방지
-          log: false, // autosave는 로그 남발 방지
+          toast: false, // autosave 토스트 중복 방지
+          log: false, // autosave 로그 중복 방지
         }
       );
 
@@ -1005,7 +987,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     const c = edCompany.trim();
     const r = edRole.trim();
     if (!c || !r) {
-      pushToast({ tone: "error", message: "회사/직무는 필수입니다." });
+      pushToast({ tone: "error", message: "회사/직무는 필수 입력이에요." });
       return;
     }
 
@@ -1033,7 +1015,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
         next_action: nextValue,
         source: sourceValue,
       },
-      { toast: true, toastMsg: "저장됨 ✓", log: true, logType: "UPDATE", logMsg: "상세 저장(수동)" }
+      { toast: true, toastMsg: "저장됨", log: true, logType: "UPDATE", logMsg: "상세 정보 저장" }
     );
 
     if (res.ok) {
@@ -1075,47 +1057,174 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     return { start, end, weekDeadlines, weekFollowups, stageCounts };
   }, [apps]);
 
-  const todayData = useMemo(() => {
+  
+  const todayNowItems = useMemo(() => {
     const activeApps = apps.filter((a) => isActiveStage(a.stage));
+    const urgentStages = new Set<Stage>(["INTERVIEW", "TEST", "OFFER"]);
+    const stageWeight: Record<Stage, number> = {
+      INTERVIEW: 50,
+      OFFER: 45,
+      TEST: 40,
+      APPLYING: 30,
+      APPLIED: 20,
+      SAVED: 10,
+      REJECTED: 0,
+      WITHDRAWN: 0,
+      ARCHIVED: 0,
+    };
 
-    const dueSoon = activeApps
-      .filter((a) => {
-        if (!a.deadline_at) return false;
-        const d = calcDDay(a.deadline_at);
-        return d >= 0 && d <= todayWindowDays;
-      })
+    const isDueUrgent = (a: Application) => {
+      if (!a.deadline_at) return false;
+      const d = calcDDay(a.deadline_at);
+      return d < 0 || d <= todayWindowDays;
+    };
+
+    const isFollowupUrgent = (a: Application) => {
+      if (!a.followup_at) return false;
+      const d = calcDDay(a.followup_at);
+      return d < 0 || d <= todayWindowDays;
+    };
+
+    const isNow = (a: Application) => isDueUrgent(a) || isFollowupUrgent(a) || urgentStages.has(a.stage);
+
+    const toTime = (value: string | null | undefined) => {
+      if (!value) return Number.POSITIVE_INFINITY;
+      const time = new Date(value).getTime();
+      return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
+    };
+
+    const updatedAtOf = (a: Application) => {
+      const updatedAt = (a as Application & { updated_at?: string | null }).updated_at ?? null;
+      return toTime(updatedAt) !== Number.POSITIVE_INFINITY ? toTime(updatedAt) : toTime(a.created_at);
+    };
+
+    const nearestRelevantDate = (a: Application) => {
+      const due = toTime(a.deadline_at);
+      const followup = toTime(a.followup_at);
+      return Math.min(due, followup);
+    };
+
+    const minDday = (a: Application) => {
+      const values: number[] = [];
+      if (a.deadline_at) values.push(calcDDay(a.deadline_at));
+      if (a.followup_at) values.push(calcDDay(a.followup_at));
+      return values.length ? Math.min(...values) : Number.POSITIVE_INFINITY;
+    };
+
+    const isOverdue = (a: Application) => {
+      const dueOver = a.deadline_at ? calcDDay(a.deadline_at) < 0 : false;
+      const followupOver = a.followup_at ? calcDDay(a.followup_at) < 0 : false;
+      return dueOver || followupOver;
+    };
+
+    return activeApps
+      .filter((a) => isNow(a))
       .sort((a, b) => {
-        const at = a.deadline_at ? new Date(a.deadline_at).getTime() : Infinity;
-        const bt = b.deadline_at ? new Date(b.deadline_at).getTime() : Infinity;
-        return at - bt;
+        const aOverdue = isOverdue(a) ? 1 : 0;
+        const bOverdue = isOverdue(b) ? 1 : 0;
+        if (aOverdue !== bOverdue) return bOverdue - aOverdue;
+
+        if (aOverdue === 1 && bOverdue === 1) {
+          const ad = minDday(a);
+          const bd = minDday(b);
+          if (ad !== bd) return ad - bd;
+        } else {
+          const at = nearestRelevantDate(a);
+          const bt = nearestRelevantDate(b);
+          if (at !== bt) return at - bt;
+        }
+
+        const aw = stageWeight[a.stage] ?? 0;
+        const bw = stageWeight[b.stage] ?? 0;
+        if (aw !== bw) return bw - aw;
+
+        return updatedAtOf(b) - updatedAtOf(a);
       });
+  }, [apps, todayWindowDays]);
 
-    const followupSoon = activeApps
-      .filter(
-        (a) => isWithinNextDays(a.followup_at, todayWindowDays) || (a.followup_at ? calcDDay(a.followup_at) < 0 : false)
-      )
-      .sort((a, b) => {
-        const ad = a.followup_at ? calcDDay(a.followup_at) : 999;
-        const bd = b.followup_at ? calcDDay(b.followup_at) : 999;
-        // overdue 먼저
-        if (ad < 0 && bd >= 0) return -1;
-        if (bd < 0 && ad >= 0) return 1;
-        // 가까운 날짜 먼저
-        const at = a.followup_at ? new Date(a.followup_at).getTime() : Infinity;
-        const bt = b.followup_at ? new Date(b.followup_at).getTime() : Infinity;
-        return at - bt;
-      });
+  const todayLaterItems = useMemo(() => {
+    const activeApps = apps.filter((a) => isActiveStage(a.stage));
+    const urgentStages = new Set<Stage>(["INTERVIEW", "TEST", "OFFER"]);
 
-    const actionOnly = activeApps
-      .filter((a) => {
-        const hasAction = !!a.next_action?.trim();
-        const noFollowup = !a.followup_at;
-        const noDeadline = !a.deadline_at;
-        return hasAction && noFollowup && noDeadline;
-      })
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const isDueUrgent = (a: Application) => {
+      if (!a.deadline_at) return false;
+      const d = calcDDay(a.deadline_at);
+      return d < 0 || d <= todayWindowDays;
+    };
 
-    return { dueSoon, followupSoon, actionOnly };
+    const isFollowupUrgent = (a: Application) => {
+      if (!a.followup_at) return false;
+      const d = calcDDay(a.followup_at);
+      return d < 0 || d <= todayWindowDays;
+    };
+
+    const isNow = (a: Application) => isDueUrgent(a) || isFollowupUrgent(a) || urgentStages.has(a.stage);
+
+    const toTime = (value: string | null | undefined) => {
+      if (!value) return Number.NEGATIVE_INFINITY;
+      const time = new Date(value).getTime();
+      return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
+    };
+
+    const updatedAtOf = (a: Application) => {
+      const updatedAt = (a as Application & { updated_at?: string | null }).updated_at ?? null;
+      return Math.max(toTime(updatedAt), toTime(a.created_at));
+    };
+
+    return activeApps
+      .filter((a) => !!a.next_action?.trim() && !isNow(a))
+      .sort((a, b) => updatedAtOf(b) - updatedAtOf(a));
+  }, [apps, todayWindowDays]);
+
+  const todayData = useMemo((): TodayData => {
+    const activeApps = apps.filter((a) => isActiveStage(a.stage));
+    const dueSoon: Application[] = [];
+    const followupSoon: Application[] = [];
+    const actionOnly: Application[] = [];
+
+    const isDueSoon = (a: Application) => {
+      return isWithinNextDays(a.deadline_at, todayWindowDays);
+    };
+
+    const isFollowupSoon = (a: Application) => {
+      return isWithinNextDays(a.followup_at, todayWindowDays);
+    };
+
+    for (const app of activeApps) {
+      const due = isDueSoon(app);
+      const followup = isFollowupSoon(app);
+      const hasNextAction = Boolean(app.next_action?.trim());
+
+      if (due) {
+        dueSoon.push(app);
+        continue;
+      }
+      if (followup) {
+        followupSoon.push(app);
+        continue;
+      }
+      if (hasNextAction) {
+        actionOnly.push(app);
+      }
+    }
+
+    const timeAsc = (iso: string | null) => (iso ? new Date(iso).getTime() : Number.POSITIVE_INFINITY);
+
+    dueSoon.sort((a, b) => timeAsc(a.deadline_at) - timeAsc(b.deadline_at));
+    followupSoon.sort((a, b) => timeAsc(a.followup_at) - timeAsc(b.followup_at));
+    actionOnly.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return {
+      dueSoon,
+      followupSoon,
+      actionOnly,
+      counts: {
+        dueSoon: dueSoon.length,
+        followupSoon: followupSoon.length,
+        actionOnly: actionOnly.length,
+        total: dueSoon.length + followupSoon.length + actionOnly.length,
+      },
+    };
   }, [apps, todayWindowDays]);
 
   const kpi = useMemo(() => {
@@ -1197,34 +1306,18 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       .filter((a) => isActiveStage(a.stage));
   }, [pins, apps]);
 
-  // ✅ actionQueue는 actionQueue만 계산하고 끝(여기 안에 todayXXX 넣으면 스코프 문제 생김)
-  const actionQueue = useMemo(() => {
-    const active = apps.filter((a) => isActiveStage(a.stage));
-    // 큐 후보: deadline/followup/next_action 중 하나라도 있으면 포함
-    const candidates = active.filter((a) => !!a.deadline_at || !!a.followup_at || !!a.next_action?.trim());
-
-    const scored = candidates
-      .map((a) => ({ a, score: priorityScore(a) }))
-      .sort((x, y) => {
-        const xp = pinnedSet.has(x.a.id) ? 1 : 0;
-        const yp = pinnedSet.has(y.a.id) ? 1 : 0;
-        if (xp !== yp) return yp - xp; // pinned first
-        return y.score - x.score;
-      })
-      .map((x) => x.a);
-
-    return scored;
-  }, [apps, pinnedSet]);
+  // actionQueue는 todayNowItems만 그대로 사용한다.
+  const actionQueue = useMemo(() => todayNowItems, [todayNowItems]);
 
   /** =========================
-   *  TODAY 몰입 UX (A안)
+   *  TODAY 몰입 UX
    *  - Activity Streak
    *  - Today Score
    *  - Today Focus (Top 1 vs 3 by plan)
    *  - Today Empty State
    *  ========================= */
 
-  // 로컬 날짜키 (YYYY-MM-DD) - 사용자의 로컬 타임존 기준
+  // 로컬 날짜키 (YYYY-MM-DD)
   function toLocalDateKey(isoOrTs: string) {
     const d = new Date(isoOrTs);
     const y = d.getFullYear();
@@ -1291,13 +1384,12 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       list.push(a);
     };
 
-    for (const a of todayData.dueSoon) pushUnique(a);
-    for (const a of todayData.followupSoon) pushUnique(a);
-    for (const a of todayData.actionOnly) pushUnique(a);
+    for (const a of todayNowItems) pushUnique(a);
+    for (const a of todayLaterItems) pushUnique(a);
 
     list.sort((a, b) => priorityScore(b) - priorityScore(a));
     return list;
-  }, [todayData]);
+  }, [todayNowItems, todayLaterItems]);
 
   const todayFocusTop3 = useMemo(() => todayFocusCandidates.slice(0, 3), [todayFocusCandidates]);
 
@@ -1307,36 +1399,32 @@ export function useDashboardController({ userId, userEmail, initialApplications 
   }, [todayFocusTop3, plan]);
 
   const todayEmptyState = useMemo(() => {
-    const hasAnyTodo =
-      todayData.dueSoon.length > 0 ||
-      todayData.followupSoon.length > 0 ||
-      todayData.actionOnly.length > 0;
+    const hasAnyTodo = todayNowItems.length > 0 || todayLaterItems.length > 0;
 
     if (!todayMeta.hasActivityToday && !hasAnyTodo) {
       return {
         kind: "EMPTY_ALL" as const,
-        title: "오늘은 아직 아무 활동이 없어요.",
-        body: "작은 행동 하나가 합격으로 이어져요. 회사/직무만 먼저 추가해볼까요?",
+        title: "오늘은 아직 기록이 없어요",
+        body: "작은 행동 하나로 흐름을 시작해 보세요. 회사/직무부터 추가해도 충분해요.",
       };
     }
 
     if (!todayMeta.hasActivityToday && hasAnyTodo) {
       return {
         kind: "EMPTY_ACTION" as const,
-        title: "오늘은 아직 체크한 게 없어요.",
-        body: "아래 항목 중 하나만 처리해도 streak가 이어져요 🔥",
+        title: "오늘은 아직 완료한 항목이 없어요",
+        body: "아래 항목 중 하나만 처리해도 연속 기록을 이어갈 수 있어요.",
       };
     }
 
     return null;
   }, [
     todayMeta.hasActivityToday,
-    todayData.dueSoon.length,
-    todayData.followupSoon.length,
-    todayData.actionOnly.length,
+    todayNowItems.length,
+    todayLaterItems.length,
   ]);
 
-  // ===== Summary copy (toast로 피드백) =====
+  // ===== Summary copy (toast 피드백) =====
   function buildWeeklyOneLineSummary() {
     const excluded = new Set(EXCLUDED_TODAY_STAGES);
     const activeStages = STAGES.filter((s) => !excluded.has(s.value));
@@ -1348,7 +1436,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       .filter(Boolean)
       .join(", ");
 
-    return `이번주 마감 ${weekData.weekDeadlines.length}건 | 진행: ${stageParts || "없음"} | Today ${todayData.dueSoon.length}건`;
+    return `이번 주 마감 ${weekData.weekDeadlines.length}건 | 진행: ${stageParts || "없음"} | 지금 처리 ${todayNowItems.length}건`;
   }
 
   function buildWeeklySummaryText() {
@@ -1357,7 +1445,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     const endStr = formatDateOnly(weekData.end.toISOString());
 
     const lines: string[] = [];
-    lines.push(`📌 이번 주 지원 요약 (${startStr} ~ ${endStr})`);
+    lines.push(`이번 주 지원 요약 (${startStr} ~ ${endStr})`);
     lines.push("");
 
     const shortMeta = (a: Application) => {
@@ -1379,7 +1467,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       return out.join("\n");
     };
 
-    lines.push(`⏰ 이번 주 마감 (${weekData.weekDeadlines.length})`);
+    lines.push(`이번 주 마감 (${weekData.weekDeadlines.length}건)`);
     if (weekData.weekDeadlines.length === 0) lines.push("- 없음");
     else for (const a of weekData.weekDeadlines) lines.push(lineDeadline(a));
     lines.push("");
@@ -1387,7 +1475,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     const deadlineIds = new Set(weekData.weekDeadlines.map((a) => a.id));
     const uniqueWeekFollowups = weekData.weekFollowups.filter((a) => !deadlineIds.has(a.id));
 
-    lines.push(`📩 이번 주 팔로업 (${uniqueWeekFollowups.length})`);
+    lines.push(`이번 주 팔로업 (${uniqueWeekFollowups.length}건)`);
     if (uniqueWeekFollowups.length === 0) lines.push("- 없음");
     else {
       for (const a of uniqueWeekFollowups) {
@@ -1407,7 +1495,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     const excluded = new Set(EXCLUDED_TODAY_STAGES);
     const activeStages = STAGES.filter((s) => !excluded.has(s.value));
 
-    lines.push("📊 진행 현황(Active)");
+    lines.push("진행 현황");
     let any = false;
     for (const s of activeStages) {
       const n = weekData.stageCounts[s.value] ?? 0;
@@ -1416,38 +1504,38 @@ export function useDashboardController({ userId, userEmail, initialApplications 
         lines.push(`- ${s.label}: ${n}`);
       }
     }
-    if (!any) lines.push("- (Active 항목 없음)");
+    if (!any) lines.push("- (진행 중 항목 없음)");
     lines.push("");
 
-    lines.push(`✅ Today(${todayWindowDays}일, 생성 시각: ${now.toLocaleString()})`);
+    lines.push(`오늘 집중 (${todayWindowDays}일 기준, 생성 시각: ${now.toLocaleString()})`);
     lines.push(
-      `- 마감 ${todayData.dueSoon.length} / 팔로업 ${todayData.followupSoon.length} / next_action-only ${todayData.actionOnly.length}`
+      `- 마감 ${todayData.counts.dueSoon}건 / 팔로업 ${todayData.counts.followupSoon}건 / 나중에 처리 ${todayData.counts.actionOnly}건`
     );
     lines.push("");
     lines.push("(요약 생성 완료)");
 
-    return lines.join("\n");
+    return sanitizeTextForClipboard(lines.join("\n"), "(요약 생성 완료)");
   }
 
   async function copyWeeklySummary() {
     try {
-      await navigator.clipboard.writeText(buildWeeklySummaryText());
-      pushToast({ tone: "success", message: "이번 주 요약 복사됨 ✓" });
+      await navigator.clipboard.writeText(sanitizeTextForClipboard(buildWeeklySummaryText(), "(요약 생성 완료)"));
+      pushToast({ tone: "success", message: "이번 주 요약을 클립보드에 복사했어요." });
     } catch {
-      pushToast({ tone: "error", message: "복사 실패 (브라우저 권한을 확인해주세요)" });
+      pushToast({ tone: "error", message: "복사에 실패했어요. 브라우저 권한을 확인해 주세요." });
     }
   }
 
   async function copyWeeklyOneLine() {
     try {
-      await navigator.clipboard.writeText(buildWeeklyOneLineSummary());
-      pushToast({ tone: "success", message: "한 줄 요약 복사됨 ✓" });
+      await navigator.clipboard.writeText(sanitizeTextForClipboard(buildWeeklyOneLineSummary(), "(요약 생성 완료)"));
+      pushToast({ tone: "success", message: "한 줄 요약을 클립보드에 복사했어요." });
     } catch {
-      pushToast({ tone: "error", message: "복사 실패 (브라우저 권한을 확인해주세요)" });
+      pushToast({ tone: "error", message: "복사에 실패했어요. 브라우저 권한을 확인해 주세요." });
     }
   }
 
-  // ===== Batch actions (List 멀티선택) =====
+  // ===== Batch actions (List 멀티 선택) =====
   async function batchMarkDone(ids: string[]) {
     if (ids.length === 0) return;
     setBusyBatch(true);
@@ -1472,7 +1560,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
 
     const updated = (data ?? []) as Application[];
     setApps((prev) => prev.map((a) => updated.find((u) => u.id === a.id) ?? a));
-    pushToast({ tone: "success", message: `완료 처리 ${ids.length}건 ✓` });
+    pushToast({ tone: "success", message: `완료 처리 ${ids.length}건` });
     pushLog("BATCH", `배치 완료 처리 ${ids.length}건`);
   }
 
@@ -1501,8 +1589,8 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       );
 
       setApps((prev) => prev.map((a) => updates.find((u) => u.id === a.id) ?? a));
-      pushToast({ tone: "success", message: `팔로업 +${days}일 ${ids.length}건 ✓` });
-      pushLog("BATCH", `배치 팔로업 +${days}일 ${ids.length}건`);
+      pushToast({ tone: "success", message: `팔로업 +${days}일 (${ids.length}건)` });
+      pushLog("BATCH", `배치 팔로업 +${days}일 (${ids.length}건)`);
     } catch (e: any) {
       setApps(before);
       pushToast({ tone: "error", message: "배치 미루기 실패: " + (e?.message ?? "unknown") });
@@ -1541,8 +1629,8 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       );
 
       setApps((prev) => prev.map((a) => updates.find((u) => u.id === a.id) ?? a));
-      pushToast({ tone: "success", message: `단계 변경 ${ids.length}건 ✓` });
-      pushLog("BATCH", `배치 단계 변경 → ${stageLabel(stage)} (${ids.length}건)`);
+      pushToast({ tone: "success", message: `단계 변경 ${ids.length}건` });
+      pushLog("BATCH", `배치 단계 변경: ${stageLabel(stage)} (${ids.length}건)`);
     } catch (e: any) {
       setApps(before);
       pushToast({ tone: "error", message: "배치 단계 변경 실패: " + (e?.message ?? "unknown") });
@@ -1558,7 +1646,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
   function batchDelete(ids: string[]) {
     if (ids.length === 0) return;
     ids.forEach((id) => scheduleDelete(id));
-    pushToast({ tone: "default", message: `삭제 예약 ${ids.length}건 (Undo 가능)` });
+    pushToast({ tone: "default", message: `삭제 예약 ${ids.length}건 (되돌리기 가능)` });
     pushLog("BATCH", `배치 삭제 예약 ${ids.length}건`);
     clearSelection();
   }
@@ -1566,7 +1654,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
   function batchPin(ids: string[]) {
     const want = ids.filter((id) => !pinnedSet.has(id));
     if (want.length === 0) {
-      pushToast({ tone: "default", message: "이미 모두 핀 되어 있어요." });
+      pushToast({ tone: "default", message: "이미 모두 핀되어 있어요." });
       return;
     }
 
@@ -1580,8 +1668,8 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       return next;
     });
 
-    // ✅ 핀 자체는 제한 없음 (표시 제한은 TodayTab에서)
-    pushToast({ tone: "success", message: `Focus 핀 적용 ✓ (${want.length}개)` });
+    // 핀 자체는 제한하지 않고, 표시 수만 TodayTab에서 제한한다.
+    pushToast({ tone: "success", message: `Focus 핀 적용 (${want.length}개)` });
     pushLog("BATCH", `배치 Focus 핀 (${want.length}개)`);
   }
 
@@ -1591,7 +1679,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
       persistPins(next);
       return next;
     });
-    pushToast({ tone: "success", message: "Focus 핀 해제 ✓" });
+    pushToast({ tone: "success", message: "Focus 핀을 해제했어요." });
     pushLog("BATCH", "배치 Focus 핀 해제");
   }
 
@@ -1617,7 +1705,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
         })
       );
 
-      pushToast({ tone: "success", message: "수동 정렬 저장 ✓" });
+      pushToast({ tone: "success", message: "순서 정렬을 저장했어요." });
       pushLog("REORDER", `수동 정렬 저장(${stageLabel(stage)})`);
     } catch (e: any) {
       setApps(before);
@@ -1663,52 +1751,52 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     () => [
       {
         id: "welcome",
-        title: "Job Tracker에 오신 걸 환영해요 👋",
+        title: "Job Tracker 시작 안내",
         body:
-          "이 앱은 ‘오늘 해야 할 일’이 자동으로 정리되도록 설계되어 있어요.\n" +
-          "핵심은 3가지예요:\n" +
-          "1) 빠르게 추가\n2) Focus Top3 핀\n3) 캘린더/리스트에서 빠른 처리",
+          "처음 오셨다면 핵심 기능 세 가지만 기억하세요.\n" +
+          "1) 빠른 추가\n2) 핀으로 우선순위 정리\n3) 오늘 집중 자동 정리",
         accent: "Esc로 언제든 닫을 수 있어요.",
       },
       {
         id: "quick_add",
         title: "빠른 추가 (N)",
         body:
-          "회사/직무만 먼저 추가하고, 디테일은 나중에 채워도 돼요.\n" +
-          "Today 화면에서 N 키로 빠른 추가를 열 수 있어요.",
+          "회사/직무부터 먼저 등록하고 상세 정보는 나중에 채워도 됩니다.\n" +
+          "Today 화면에서 N 키로 바로 열 수 있어요.",
         targetRef: quickAddBtnRef,
-        accent: "단축키: N",
+        accent: "단축키 N",
       },
       {
         id: "calendar",
-        title: "캘린더에서 날짜 드래그로 이동",
+        title: "캘린더에서 날짜 이동",
         body:
-          "마감/팔로업 칩을 드래그해서 다른 날짜로 옮길 수 있어요.\n" +
-          "오른쪽 패널에서 그날 할 일을 바로 처리할 수도 있어요.",
+          "마감/팔로업 카드를 드래그해서 다른 날짜로 옮길 수 있어요.\n" +
+          "오른쪽 패널에서 해당 날짜 항목을 바로 처리할 수도 있습니다.",
         targetRef: calendarTabRef,
-        accent: "단축키: C",
+        accent: "단축키 C",
       },
       {
         id: "list",
-        title: "리스트: 멀티선택 + 배치 처리",
+        title: "목록 멀티 선택 + 배치 처리",
         body:
-          "리스트에서 여러 항목을 선택한 뒤, 완료/미루기/단계 변경/아카이브를 한 번에 처리할 수 있어요.\n" +
-          "수동 정렬(POSITION)은 ‘단계 필터’를 선택했을 때 드래그로 정렬할 수 있어요.",
+          "목록에서 여러 항목을 선택해 완료/미루기/단계 변경/보관을 한 번에 처리할 수 있어요.\n" +
+          "POSITION 정렬에서는 드래그로 순서도 조정됩니다.",
         targetRef: listTabRef,
-        accent: "단축키: / 로 검색 포커스",
+        accent: "단축키 / 로 검색",
       },
       {
         id: "report",
-        title: "리포트 & 업데이트 로그",
+        title: "리포트와 업데이트 로그",
         body:
-          "리포트에서 Stage/Source/Funnel을 확인하고,\n" + "최근 업데이트 로그로 내가 무엇을 했는지 추적할 수 있어요.",
+          "리포트에서 단계/소스/퍼널을 확인하고,\n" +
+          "업데이트 로그에서 최근 변경 내역을 빠르게 추적할 수 있어요.",
         targetRef: reportTabRef,
-        accent: "단축키: R(리포트), U(업데이트 로그)",
+        accent: "단축키 R(리포트), U(업데이트 로그)",
       },
       {
         id: "done",
-        title: "준비 완료 ✅",
-        body: "이제부터는 Today에서 Focus Top3를 핀하고, Action Queue를 따라가면 가장 효율적이에요.",
+        title: "준비 완료",
+        body: "이제 Today에서 오늘 집중 항목을 확인하고, 우선순위대로 하나씩 처리해 보세요.",
       },
     ],
     []
@@ -1724,6 +1812,8 @@ export function useDashboardController({ userId, userEmail, initialApplications 
   const [queueShowAll, setQueueShowAll] = useState(false);
   const queueVisible = queueShowAll ? actionQueue : actionQueue.slice(0, 8);
   const queueHasMore = actionQueue.length > 8;
+  const todayNowVisible = queueVisible;
+  const todayNowHasMore = queueHasMore;
 
   // ===== Tutorial open logic: allow reopening =====
   function reopenTutorial() {
@@ -1736,7 +1826,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     userId,
     userEmail,
 
-    // ✅ SaaS
+    // SaaS
     plan,
     entitlements,
     planLoading,
@@ -1806,12 +1896,16 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     kpi,
     focusApps,
     actionQueue,
+    todayNowItems,
+    todayLaterItems,
     queueShowAll,
     setQueueShowAll,
     queueVisible,
     queueHasMore,
+    todayNowVisible,
+    todayNowHasMore,
 
-    // ✅ TODAY 몰입 UX
+    // TODAY 몰입 UX
     todayMeta,
     todayFocusTop3,
     todayFocusVisible,
@@ -1902,7 +1996,6 @@ export function useDashboardController({ userId, userEmail, initialApplications 
     goToAddForm,
     openDetails,
     signOut,
-    addSampleData,
     addQuick,
     addFull,
     markDone,
@@ -1921,3 +2014,7 @@ export function useDashboardController({ userId, userEmail, initialApplications 
 }
 
 export type DashboardController = ReturnType<typeof useDashboardController>;
+
+
+
+

@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import type { DashboardController } from "../hooks/useDashboardController";
 
-import type { Stage } from "../../../lib/applications/types";
+import SelectMenu from "../../common/SelectMenu";
+import type { Filter, SortMode, Stage } from "../../../lib/applications/types";
 import { STAGES } from "../../../lib/applications/types";
 import {
   calcDDay,
@@ -19,17 +21,84 @@ import {
  * - 실제 데이터/핸들러는 DashboardController(c)에서 제공
  */
 
-function BulkActionBar({ c }: { c: DashboardController }) {
+function BulkActionBar({ c, mobile }: { c: DashboardController; mobile?: boolean }) {
+  const bulkStageOptions = useMemo(
+    () => STAGES.map((s) => ({ value: s.value, label: s.label })),
+    []
+  );
+
   if (c.selectedIds.length === 0) return null;
 
   const allVisibleSelected = c.listVisibleIds.every((id) => c.selectedIds.includes(id));
   const someVisibleSelected = c.listVisibleIds.some((id) => c.selectedIds.includes(id));
 
+  if (mobile) {
+    return (
+      <div
+        className="fixed left-0 right-0 top-0 z-[60] border-b border-zinc-800 bg-zinc-950/90 backdrop-blur sm:hidden"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
+        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 overflow-x-auto px-4">
+          <div className="shrink-0 text-xs text-zinc-400">
+            선택 <span className="font-semibold text-zinc-100">{c.selectedIds.length}</span>
+          </div>
+          <button
+            onClick={() => c.batchMarkDone(c.selectedIds)}
+            disabled={c.busyBatch}
+            className="shrink-0 rounded-lg border border-zinc-700 bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-900 disabled:opacity-50"
+            title="완료 처리"
+          >
+            ✓
+          </button>
+          <button
+            onClick={() => c.batchPin(c.selectedIds)}
+            disabled={c.busyBatch}
+            className="shrink-0 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 disabled:opacity-50"
+            title="핀 추가"
+          >
+            📌
+          </button>
+          <button
+            onClick={() => c.batchPostpone(c.selectedIds, 3)}
+            disabled={c.busyBatch}
+            className="shrink-0 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 disabled:opacity-50"
+            title="+3일"
+          >
+            →+3
+          </button>
+          <button
+            onClick={() => c.batchPostpone(c.selectedIds, 7)}
+            disabled={c.busyBatch}
+            className="shrink-0 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 disabled:opacity-50"
+            title="+7일"
+          >
+            →+7
+          </button>
+          <button
+            onClick={() => c.batchDelete(c.selectedIds)}
+            disabled={c.busyBatch}
+            className="shrink-0 rounded-lg border border-red-900/40 bg-red-950/40 px-3 py-1.5 text-xs text-red-200 disabled:opacity-50"
+            title="삭제"
+          >
+            삭제
+          </button>
+          <button
+            onClick={c.clearSelection}
+            className="shrink-0 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100"
+            title="선택 해제"
+          >
+            해제
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="sticky top-4 z-[40] rounded-2xl border border-zinc-800 bg-zinc-950/80 backdrop-blur p-4">
+    <div className="sticky top-4 z-[40] hidden rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4 backdrop-blur sm:block">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="text-sm text-zinc-300">
-          선택됨: <span className="font-semibold text-white">{c.selectedIds.length}</span>개
+          선택됨: <span className="font-semibold text-white">{c.selectedIds.length}</span>건
           <span className="ml-2 text-xs text-zinc-500">(배치 처리 가능)</span>
         </div>
 
@@ -57,19 +126,12 @@ function BulkActionBar({ c }: { c: DashboardController }) {
             ⏩ +7일
           </button>
 
-          <select
-            className="rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-zinc-600"
+          <SelectMenu
             value={c.bulkStage}
-            onChange={(e) => c.setBulkStage(e.target.value as Stage)}
-            disabled={c.busyBatch}
-            title="선택 항목 단계 변경"
-          >
-            {STAGES.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => c.setBulkStage(value as Stage)}
+            options={bulkStageOptions}
+            buttonClassName="min-w-[132px] border-zinc-800 bg-zinc-950"
+          />
 
           <button
             onClick={() => c.batchSetStage(c.selectedIds, c.bulkStage)}
@@ -136,6 +198,17 @@ function BulkActionBar({ c }: { c: DashboardController }) {
   );
 }
 
+function MobileBulkActionBarPortal({ c }: { c: DashboardController }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return null;
+  return createPortal(<BulkActionBar c={c} mobile />, document.body);
+}
+
 export default function ListTab({ c }: { c: DashboardController }) {
   const visible = c.visibleListApps;
 
@@ -144,14 +217,40 @@ export default function ListTab({ c }: { c: DashboardController }) {
     return c.stageFilterForDrag ? stageLabel(c.stageFilterForDrag) : null;
   }, [c.dragEnabled, c.stageFilterForDrag]);
 
+  const filterOptions = useMemo(
+    () => [
+      { value: "ALL", label: "전체" },
+      { value: "DUE_SOON", label: "마감 임박(7일)", disabled: c.sortMode === "POSITION" },
+      ...STAGES.map((s) => ({ value: s.value, label: s.label })),
+    ],
+    [c.sortMode]
+  );
+
+  const sortOptions = useMemo(
+    () =>
+      [
+        { value: "POSITION", label: "수동 정렬" },
+        { value: "DEADLINE", label: "마감 임박 순" },
+        { value: "CREATED_DESC", label: "최신 생성 순" },
+      ] satisfies Array<{ value: SortMode; label: string }>,
+    []
+  );
+
   return (
-    <section className="mt-6 space-y-4">
+    <section
+      data-testid="list-tab-section"
+      className={[
+        "mt-6 space-y-4",
+        c.selectedIds.length > 0 ? "pt-[calc(3.5rem+env(safe-area-inset-top))] sm:pt-0" : "",
+      ].join(" ")}
+    >
       <BulkActionBar c={c} />
+      <MobileBulkActionBarPortal c={c} />
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="text-sm text-zinc-400">
-            총 <span className="text-zinc-100 font-semibold">{c.apps.length}</span>개
+            총 <span className="text-zinc-100 font-semibold">{c.apps.length}</span>건
           </div>
 
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
@@ -165,35 +264,29 @@ export default function ListTab({ c }: { c: DashboardController }) {
 
             <div className="flex items-center gap-2">
               <span className="text-sm text-zinc-400">필터</span>
-              <select
-                className="rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-zinc-600"
+              <SelectMenu
                 value={c.filter}
-                onChange={(e) => {
-                  c.setFilter(e.target.value as any);
+                options={filterOptions}
+                onChange={(value) => {
+                  c.setFilter(value as Filter);
                   c.clearSelection();
                 }}
-              >
-                <option value="ALL">전체</option>
-                <option value="DUE_SOON">마감 임박(7일)</option>
-                {STAGES.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+                buttonClassName="min-w-[148px] border-zinc-800 bg-zinc-950"
+                buttonTestId="list-filter-button"
+                menuTestId="list-filter-menu"
+              />
             </div>
 
             <div className="flex items-center gap-2">
               <span className="text-sm text-zinc-400">정렬</span>
-              <select
-                className="rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-zinc-600"
+              <SelectMenu
                 value={c.sortMode}
-                onChange={(e) => c.setSortMode(e.target.value as any)}
-              >
-                <option value="POSITION">수동 정렬</option>
-                <option value="DEADLINE">마감 임박 순</option>
-                <option value="CREATED_DESC">최신 생성 순</option>
-              </select>
+                options={sortOptions}
+                onChange={(value) => c.setSortMode(value as SortMode)}
+                buttonClassName="min-w-[140px] border-zinc-800 bg-zinc-950"
+                buttonTestId="list-sort-button"
+                menuTestId="list-sort-menu"
+              />
             </div>
 
             <button
@@ -232,12 +325,6 @@ export default function ListTab({ c }: { c: DashboardController }) {
                 className="px-4 py-2 rounded-xl border border-emerald-900/40 bg-emerald-950/30 text-emerald-200 font-medium hover:bg-emerald-950/400"
               >
                 ➕ 첫 카드 추가
-              </button>
-              <button
-                onClick={c.addSampleData}
-                className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm"
-              >
-                ✨ 샘플 데이터 추가
               </button>
             </div>
           </div>
@@ -339,7 +426,7 @@ export default function ListTab({ c }: { c: DashboardController }) {
 
                     {a.next_action?.trim() ? (
                       <div className="mt-2 text-sm text-zinc-400 line-clamp-1">
-                        <span className="text-zinc-500">Next:</span> {a.next_action.trim()}
+                        <span className="text-zinc-500">다음 행동:</span> {a.next_action.trim()}
                       </div>
                     ) : null}
                   </div>
@@ -366,7 +453,7 @@ export default function ListTab({ c }: { c: DashboardController }) {
                       }}
                       disabled={c.busyId === a.id}
                       className="text-sm px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50"
-                      title="삭제 (Undo 가능)"
+                      title="삭제 (되돌리기 가능)"
                     >
                       삭제
                     </button>

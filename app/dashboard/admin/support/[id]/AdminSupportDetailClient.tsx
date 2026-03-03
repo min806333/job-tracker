@@ -3,15 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "../../../../../lib/supabase/browser";
 import SubpageHeader from "../../../../../components/dashboard/common/SubpageHeader";
+import { sanitizeTextForClipboard } from "../../../../../lib/text/sanitize";
 
 type Status = "open" | "in_progress" | "closed";
 
 type TicketDetail = {
   id: string;
+  user_id: string;
   subject: string;
   message: string;
   status: Status;
-  user_email: string | null;
+  requester_email: string | null;
   created_at: string;
   admin_note: string | null;
 };
@@ -38,7 +40,7 @@ export default function AdminSupportDetailClient({ id }: { id: string }) {
 
     const { data, error } = await supabase
       .from("support_tickets")
-      .select("id, subject, message, status, user_email, created_at, admin_note")
+      .select("id, user_id, subject, message, status, requester_email, created_at, admin_note")
       .eq("id", id)
       .single();
 
@@ -76,13 +78,22 @@ export default function AdminSupportDetailClient({ id }: { id: string }) {
     await load();
   }
 
+  async function copyToClipboard(value: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(sanitizeTextForClipboard(value, "(empty)"));
+      pushToast(`${label} copied.`);
+    } catch {
+      pushToast(`Failed to copy ${label}.`);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
       <div className="max-w-3xl mx-auto px-4 py-10">
         <SubpageHeader
           title="Ticket Detail"
           desc="Admin only: update status and notes."
-          backHref="/dashboard/admin/support"
+          backHref="/admin/support"
           backLabel="Back to tickets"
         />
 
@@ -99,8 +110,40 @@ export default function AdminSupportDetailClient({ id }: { id: string }) {
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
               <div className="text-xs text-zinc-500">Subject</div>
               <div className="mt-1 text-lg font-semibold">{ticket.subject}</div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs text-zinc-500">Requester email</div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className="break-all text-sm text-zinc-200">
+                      {ticket.requester_email ?? "(no email)"}
+                    </div>
+                    {ticket.requester_email ? (
+                      <button
+                        type="button"
+                        onClick={() => void copyToClipboard(ticket.requester_email!, "Email")}
+                        className="rounded-lg border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900/50"
+                      >
+                        Copy
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-zinc-500">User ID</div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className="break-all font-mono text-xs text-zinc-300">{ticket.user_id}</div>
+                    <button
+                      type="button"
+                      onClick={() => void copyToClipboard(ticket.user_id, "User ID")}
+                      className="rounded-lg border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-900/50"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              </div>
               <div className="mt-2 text-xs text-zinc-500">
-                {ticket.user_email ?? "(no email)"} - {new Date(ticket.created_at).toLocaleString()}
+                {new Date(ticket.created_at).toLocaleString()}
               </div>
             </div>
 

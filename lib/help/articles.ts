@@ -50,7 +50,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     slug: "today-works",
     title: "Today 화면은 어떤 기준으로 정렬되나요?",
-    summary: "오늘 해야 할 것(마감/팔로업/next_action)을 실행 우선순위로 보여줘요.",
+    summary: "오늘 해야 할 것(마감/팔로업/다음 행동)을 실행 우선순위로 보여줘요.",
     category: "features",
     tags: ["Today", "우선순위", "실행"],
     updatedAt: "2026-02-22",
@@ -59,7 +59,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
 ## 정렬 기준(개념)
 - **마감 임박** → 가장 위
 - **팔로업 예정** → 그 다음
-- **next_action(다음 행동)** 이 있는 항목 → 실행 큐에 올라와요
+- **다음 행동** 이 있는 항목 → 실행 큐에 올라와요
 
 ## 실전 사용법
 - Today에서 “지금 당장 할 1개”만 먼저 처리해도 하루가 달라져요.

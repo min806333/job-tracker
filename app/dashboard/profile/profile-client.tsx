@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -11,6 +11,7 @@ type ProfileRow = {
   plan: Plan;
   plan_status: string;
   updated_at: string;
+  is_admin: boolean;
 };
 
 function Item({
@@ -88,7 +89,7 @@ export default function ProfileClient() {
 
       const { data: prof, error } = await supabase
         .from("profiles")
-        .select("id, plan, plan_status, updated_at")
+        .select("id, plan, plan_status, updated_at, is_admin")
         .eq("id", u.id)
         .single();
 
@@ -158,7 +159,7 @@ export default function ProfileClient() {
 
           {/* 상태 배지 */}
           <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1">
-            <span className="text-xs text-zinc-400">Plan</span>
+            <span className="text-xs text-zinc-400">요금제</span>
             <span className="text-xs font-medium text-zinc-100">
               {plan === "pro" ? "SUPPORTER" : plan === "grace" ? "GRACE" : "FREE"}
             </span>

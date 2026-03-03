@@ -2,32 +2,31 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import PlanComparisonTable from "@/components/billing/PlanComparisonTable";
 import type { DashboardController } from "../hooks/useDashboardController";
 import { Drawer } from "../common/Drawer";
-
-const FREE_MAX_APPS = 100;
-const FREE_FOCUS_VISIBLE = 1;
-const PRO_FOCUS_VISIBLE = 3;
+import { track } from "@/lib/analytics/track";
 
 function normalizeReason(raw?: string) {
-  const r = (raw ?? "").trim();
-  if (!r) {
+  const reason = (raw ?? "").trim();
+  if (!reason) {
     return {
-      title: "이 기능은 Supporter 전용이에요",
-      body: "지금 사용하려는 기능은 Supporter에서 제공돼요.",
+      title: "이 기능은 Pro에서 제공돼요",
+      body: "지금 시도한 기능은 Pro 플랜에서 사용할 수 있습니다.",
     };
   }
 
   return {
-    title: "이 기능은 Supporter 전용이에요",
-    body: r,
+    title: "이 기능은 Pro에서 제공돼요",
+    body: reason,
   };
 }
 
 export default function PaywallDrawer({ c }: { c: DashboardController }) {
   const router = useRouter();
   const [dontShowToday, setDontShowToday] = useState(false);
-
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const reason = useMemo(() => normalizeReason(c.paywallReason), [c.paywallReason]);
 
   function close() {
@@ -40,111 +39,97 @@ export default function PaywallDrawer({ c }: { c: DashboardController }) {
     }
   }
 
-  function goSupport() {
+  function goPlanCompare() {
+    const reasonKey = (c.paywallReason || "paywall_drawer_plan").trim() || "paywall_drawer_plan";
+    void track("paywall_cta_clicked", {
+      reason: reasonKey,
+      cta: "upgrade",
+      plan: c.plan,
+    });
+    void track("upsell_cta_clicked", { from: "paywall", action: "details", plan: c.plan });
     close();
-    const subject = encodeURIComponent("Supporter 업그레이드 문의");
-    const message = encodeURIComponent(
-      c.paywallReason || "Supporter 업그레이드 문의합니다."
-    );
-    router.push(`/dashboard/support?subject=${subject}&message=${message}`);
+    router.push("/dashboard/plan#compare");
   }
 
-  function goPlan() {
+  async function startCheckout() {
+    if (checkoutLoading) return;
+    setCheckoutError(null);
+    setCheckoutLoading(true);
+    const reasonKey = (c.paywallReason || "paywall_drawer_checkout").trim() || "paywall_drawer_checkout";
+    try {
+      void track("paywall_cta_clicked", {
+        reason: reasonKey,
+        cta: "upgrade",
+        plan: c.plan,
+      });
+      void track("upsell_cta_clicked", { from: "paywall", action: "primary", plan: c.plan });
+
+      const res = await fetch("/api/stripe/checkout", { method: "POST" });
+      const text = await res.text();
+      const data = text ? (JSON.parse(text) as { url?: string; error?: string }) : null;
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.error ?? "결제 페이지로 이동하지 못했습니다.");
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "결제 연결 중 오류가 발생했습니다.";
+      setCheckoutError(message);
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
+
+  function dismiss() {
+    const reasonKey = (c.paywallReason || "paywall_drawer_dismiss").trim() || "paywall_drawer_dismiss";
+    void track("paywall_cta_clicked", {
+      reason: reasonKey,
+      cta: "dismiss",
+      plan: c.plan,
+    });
+    void track("upsell_cta_clicked", { from: "paywall", action: "secondary", plan: c.plan });
     close();
-    router.push("/dashboard/plan");
   }
 
   return (
-    <Drawer
-      open={c.paywallOpen}
-      onClose={close}
-      title="💚 Supporter로 응원하기"
-    >
-      <div className="h-full flex justify-end">
+    <Drawer open={c.paywallOpen} onClose={close} title="Pro로 업그레이드">
+      <div className="flex h-full justify-end">
         <div className="h-full w-[420px] max-w-[92vw] border-l border-zinc-800 bg-zinc-950">
-          <div className="px-4 py-4 space-y-4">
-
-            {/* ===== 이유 강조 ===== */}
+          <div className="space-y-4 px-4 py-4">
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
-              <div className="text-xs text-zinc-500">지금 막힌 이유</div>
-              <div className="mt-1 text-base font-semibold text-zinc-100">
-                {reason.title}
-              </div>
-              <div className="mt-2 text-sm text-zinc-400 leading-relaxed">
-                {reason.body}
-              </div>
-
-              {/* 결과 중심 혜택 강조 */}
-              <div className="mt-4 rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-4 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
-                <div className="text-sm font-semibold text-emerald-200">
-                  Supporter가 되면 바로 가능해요
-                </div>
-                <ul className="mt-2 text-sm text-emerald-100/90 space-y-1">
-                  <li>• 중요한 지원 {PRO_FOCUS_VISIBLE}개를 한 번에 집중 관리</li>
-                  <li>• 데이터를 CSV로 내보내 분석/백업 가능</li>
-                  <li>• 제한 걱정 없이 계속 추가</li>
-                </ul>
-              </div>
+              <div className="text-xs text-zinc-500">제한된 이유</div>
+              <div className="mt-1 text-base font-semibold text-zinc-100">오늘 할 일을 더 정확히 정리하려면 Pro가 필요해요</div>
+              <div className="mt-2 text-sm leading-relaxed text-zinc-400">{reason.body}</div>
             </div>
 
-            {/* ===== 플랜 비교 ===== */}
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
-              <div className="font-medium text-zinc-100">FREE</div>
-              <ul className="mt-2 text-sm text-zinc-400 space-y-1">
-                <li>• Applications 최대 {FREE_MAX_APPS}개</li>
-                <li>• Focus Top {FREE_FOCUS_VISIBLE}개 표시</li>
-                <li>• CSV 내보내기 제한</li>
-              </ul>
-            </div>
+            <PlanComparisonTable currentPlan={c.plan} freeMaxApps={100} variant="compact" />
 
-            <div className="rounded-2xl border border-emerald-900/50 bg-emerald-950/30 p-4 shadow-[0_0_24px_rgba(16,185,129,0.18)]">
-              <div className="flex items-center justify-between">
-                <div className="font-semibold text-emerald-200">SUPPORTER</div>
-                <span className="text-xs text-emerald-100/70">응원형 · 강제 결제 X</span>
-              </div>
-              <ul className="mt-2 text-sm text-emerald-100/90 space-y-1">
-                <li>• Applications 제한 완화</li>
-                <li>• Focus Top {PRO_FOCUS_VISIBLE}개 표시</li>
-                <li>• CSV 내보내기 가능</li>
-              </ul>
-              <div className="mt-3 text-xs text-emerald-100/70">
-                * 결제 강요는 없어요. “응원 + 배지 + 편의 기능” 중심이에요.
-              </div>
-            </div>
-
-            {/* ===== CTA 구조 재정렬 ===== */}
-            <div className="space-y-2 pt-2">
-
-              {/* Primary */}
+            <div className="space-y-2 pt-1">
               <button
                 type="button"
-                onClick={goSupport}
-                className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-white font-semibold hover:bg-emerald-500 transition shadow-lg"
+                onClick={() => void startCheckout()}
+                disabled={checkoutLoading}
+                className="w-full h-10 rounded-xl border border-emerald-900/40 bg-emerald-950/30 px-4 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-950/40 disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
               >
-                Supporter 문의하기
+                {checkoutLoading ? "결제 페이지 이동 중..." : "Pro로 계속하기"}
               </button>
-
-              {/* Secondary (심리적 안정 버튼) */}
               <button
                 type="button"
-                onClick={close}
-                className="w-full rounded-xl bg-zinc-900/40 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800 transition"
+                onClick={dismiss}
+                className="w-full h-10 rounded-xl border border-zinc-700 bg-zinc-950/60 px-4 text-sm text-zinc-200 transition hover:bg-zinc-900/70 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
               >
-                지금은 계속 무료로 사용할래요
+                나중에
               </button>
-
-              {/* Tertiary */}
               <button
                 type="button"
-                onClick={goPlan}
-                className="w-full text-sm text-zinc-400 hover:text-zinc-200 transition"
+                onClick={goPlanCompare}
+                className="text-xs text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline focus:outline-none focus:ring-2 focus:ring-indigo-500/40 rounded"
               >
-                내 플랜 / 혜택 보기
+                자세히 보기
               </button>
+              {checkoutError ? <div className="text-sm text-red-300">{checkoutError}</div> : null}
             </div>
 
-            {/* ===== Snooze ===== */}
-            <label className="flex items-center gap-2 pt-2 text-[11px] text-zinc-500 opacity-60">
+            <label className="flex items-center gap-2 pt-1 text-[11px] text-zinc-500">
               <input
                 type="checkbox"
                 checked={dontShowToday}
@@ -153,10 +138,6 @@ export default function PaywallDrawer({ c }: { c: DashboardController }) {
               />
               오늘은 이 안내를 그만 보기
             </label>
-
-            <div className="text-[11px] text-zinc-600">
-              * Stripe 결제 연동 전까지는 “문의 → 수동 Supporter 부여”로 운영 가능
-            </div>
           </div>
         </div>
       </div>

@@ -125,12 +125,12 @@ export default function PlanMismatchClient({ rows }: { rows: Row[] }) {
     <div className="mt-8 grid gap-4">
       <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
         <div className="flex items-center justify-between">
-          <div className="font-medium">Plan Check Queue</div>
+          <div className="font-medium">요금제 확인 대기열</div>
           <div className="text-xs text-zinc-500">Stripe subscription present</div>
         </div>
 
         {rows.length === 0 ? (
-          <div className="mt-3 text-sm text-zinc-500">No subscriptions to check.</div>
+          <div className="mt-3 text-sm text-zinc-500">확인할 구독이 없습니다.</div>
         ) : (
           <div className="mt-4 overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -138,7 +138,7 @@ export default function PlanMismatchClient({ rows }: { rows: Row[] }) {
                 <tr className="text-left">
                   <th className="py-2 pr-4">User</th>
                   <th className="py-2 pr-4">Subscription</th>
-                  <th className="py-2 pr-4">Profile Plan</th>
+                  <th className="py-2 pr-4">프로필 요금제</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Expected</th>
                   <th className="py-2 pr-4">Action</th>
@@ -163,7 +163,7 @@ export default function PlanMismatchClient({ rows }: { rows: Row[] }) {
                             disabled={item?.loading}
                             className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-900/50 disabled:opacity-50"
                           >
-                            {item?.loading ? "확인 중..." : "Check"}
+                            {item?.loading ? "확인 중..." : "확인"}
                           </button>
                           {result && !result.matches ? (
                             <button
@@ -172,7 +172,7 @@ export default function PlanMismatchClient({ rows }: { rows: Row[] }) {
                               disabled={item?.resyncing}
                               className="rounded-lg border border-amber-900/40 bg-amber-950/30 px-3 py-1 text-xs text-amber-200 hover:bg-amber-950/40 disabled:opacity-50"
                             >
-                              {item?.resyncing ? "동기화 중..." : "Resync plan"}
+                              {item?.resyncing ? "동기화 중..." : "요금제 재동기화"}
                             </button>
                           ) : null}
                           {item?.error ? (
@@ -191,12 +191,12 @@ export default function PlanMismatchClient({ rows }: { rows: Row[] }) {
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
         <div className="flex items-center justify-between">
-          <div className="font-medium">Plan Mismatches</div>
+          <div className="font-medium">요금제 불일치</div>
           <div className="text-xs text-zinc-500">Expected vs profiles.plan</div>
         </div>
 
         {mismatches.length === 0 ? (
-          <div className="mt-3 text-sm text-zinc-500">No mismatches detected yet.</div>
+          <div className="mt-3 text-sm text-zinc-500">아직 불일치가 없습니다.</div>
         ) : (
           <div className="mt-4 overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -205,8 +205,8 @@ export default function PlanMismatchClient({ rows }: { rows: Row[] }) {
                   <th className="py-2 pr-4">User</th>
                   <th className="py-2 pr-4">Subscription</th>
                   <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 pr-4">Profile Plan</th>
-                  <th className="py-2 pr-4">Expected Plan</th>
+                  <th className="py-2 pr-4">프로필 요금제</th>
+                  <th className="py-2 pr-4">예상 요금제</th>
                   <th className="py-2 pr-4">Action</th>
                 </tr>
               </thead>
@@ -227,7 +227,7 @@ export default function PlanMismatchClient({ rows }: { rows: Row[] }) {
                           disabled={item?.resyncing}
                           className="rounded-lg border border-amber-900/40 bg-amber-950/30 px-3 py-1 text-xs text-amber-200 hover:bg-amber-950/40 disabled:opacity-50"
                         >
-                          {item?.resyncing ? "동기화 중..." : "Resync plan"}
+                          {item?.resyncing ? "동기화 중..." : "요금제 재동기화"}
                         </button>
                       </td>
                     </tr>
